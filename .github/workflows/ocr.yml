@@ -37,7 +37,7 @@ jobs:
       ASCOUT_REPO: https://github.com/TheHalfMoon/Ascout.git
       MODEL: qwen3:4b-instruct-2507-q4_K_M
       MODEL_ID_PREFIX: 0edcdef34593
-      OCR_BUILD: fabbdb29
+      OCR_BUILD: "v1.12.13 (fabbdb2"
       OLLAMA_VERSION: v0.40.2
       OLLAMA_SHA256: 726bee78706c281b0eeef00746efe51a044d71c592c3f0b195820707f31fdf04
       OLLAMA_HOST: 127.0.0.1:11434
@@ -90,7 +90,7 @@ jobs:
           npm ci --no-audit --no-fund
           echo "$GITHUB_WORKSPACE/node_modules/.bin" >> "$GITHUB_PATH"
           ./node_modules/.bin/ocr --version | tee "$OUT/ocr-version.txt"
-          grep -q "$OCR_BUILD" "$OUT/ocr-version.txt" || { echo "::error::OCR build mismatch"; exit 1; }
+          grep -qF "$OCR_BUILD" "$OUT/ocr-version.txt" || { echo "::error::OCR build mismatch"; exit 1; }
 
       - name: Configure OCR custom provider (runner-local Ollama)
         run: |
