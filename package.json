@@ -1,0 +1,5 @@
+{
+  "name": "ascout-ocr-review",
+  "private": true,
+  "dependencies": { "@alibaba-group/open-code-review": "1.12.13" }
+}

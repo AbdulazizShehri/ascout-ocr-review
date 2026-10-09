@@ -1,0 +1,48 @@
+{
+  "file": "src/receipt-store.ts",
+  "planted": [
+    {
+      "id": "P1",
+      "line": 11,
+      "class": "path-traversal",
+      "keywords": [
+        "startsWith",
+        "prefix",
+        "traversal",
+        "escape",
+        "sibling",
+        "relative"
+      ]
+    },
+    {
+      "id": "P2",
+      "line": 20,
+      "class": "off-by-one",
+      "keywords": [
+        "off-by-one",
+        "<=",
+        "undefined",
+        "bound",
+        "length",
+        "one extra",
+        "out of"
+      ]
+    },
+    {
+      "id": "P3",
+      "line": 28,
+      "class": "command-injection",
+      "keywords": [
+        "inject",
+        "shell",
+        "execSync",
+        "execFile",
+        "interpolat",
+        "sanitiz",
+        "escape"
+      ]
+    }
+  ],
+  "line_tolerance": 3,
+  "preregistered_rule": "QUALIFIED only if (a) planted run COMPLETED with 1/1 selected file completed, (b) all 3 planted defects matched (comment within +/-3 lines AND mentions a class keyword), (c) clean run COMPLETED with at most 1 comment, and any clean comment is manually adjudicated non-material, (d) neither run breached the RAM guard or the 45-minute wall cap. Anything else = NOT_QUALIFIED; then no further local OCR attempts."
+}
