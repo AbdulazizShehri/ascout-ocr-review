@@ -80,9 +80,7 @@ jobs:
           ollama list | tee "$OUT/model.txt"
           grep -q "$MODEL_ID_PREFIX" "$OUT/model.txt" || { echo "::error::model ID mismatch"; exit 1; }
           # Same verified weights; only the CPU thread count changes (default used 2 of 4 vCPUs).
-          printf 'FROM %s
-PARAMETER num_thread %s
-' "$MODEL" "$(nproc)" > "$RUNNER_TEMP/Modelfile"
+          { echo "FROM $MODEL"; echo "PARAMETER num_thread $(nproc)"; } > "$RUNNER_TEMP/Modelfile"
           ollama create ocr-reviewer -f "$RUNNER_TEMP/Modelfile" > /dev/null
           ollama show ocr-reviewer --modelfile | grep -E '^(FROM|PARAMETER)' | tee -a "$OUT/model.txt"
 
