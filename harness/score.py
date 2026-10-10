@@ -50,9 +50,20 @@ def has_budget_stop(result):
     )
 
 
+def terminal_complete(result):
+    # With a run manifest OCR sets status to manifest.terminal_state, one of
+    # complete | partial | failed | skipped (open-code-review v1.12.13).
+    manifest = result.get("manifest")
+    return (
+        result.get("status") == "complete"
+        and isinstance(manifest, dict)
+        and manifest.get("terminal_state") == "complete"
+    )
+
+
 def complete(result):
     return (
-        result.get("status") == "completed"
+        terminal_complete(result)
         and coverage(result) == (1, 1, 0)
         and comments(result) is not None
         and not has_budget_stop(result)

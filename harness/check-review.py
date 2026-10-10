@@ -11,9 +11,12 @@ def check(result, base, head):
     reasons = []
     if not isinstance(result, dict):
         return ["output must be a JSON object"]
-    if result.get("status") != "completed":
-        reasons.append("OCR status is not completed")
     manifest = result.get("manifest")
+    # With a run manifest OCR sets status to manifest.terminal_state, one of
+    # complete | partial | failed | skipped (open-code-review v1.12.13).
+    terminal = manifest.get("terminal_state") if isinstance(manifest, dict) else None
+    if result.get("status") != "complete" or terminal != "complete":
+        reasons.append("OCR status/terminal_state is not complete")
     if not isinstance(manifest, dict):
         return reasons + ["missing manifest"]
     source = manifest.get("input")

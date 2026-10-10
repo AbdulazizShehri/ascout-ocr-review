@@ -1,0 +1,124 @@
+{
+  "status": "failed",
+  "llm": {
+    "provider": "ollama-local",
+    "model": "ocr-reviewer"
+  },
+  "message": "Review failed: 1 finding(s); 1 of 1 selected item(s) failed.",
+  "summary": {
+    "files_reviewed": 1,
+    "comments": 1,
+    "total_tokens": 860797,
+    "input_tokens": 850364,
+    "output_tokens": 10433,
+    "cache_read_tokens": 844253,
+    "elapsed": "2h24m57s"
+  },
+  "tool_calls": {
+    "total": 6,
+    "by_tool": {
+      "code_comment": 1,
+      "code_search": 4,
+      "file_find": 1
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [
+    {
+      "path": "src/receipt-store.ts",
+      "content": "The receiptObjectType function is vulnerable to command injection due to direct string interpolation of the sha parameter in a shell command. This can allow attackers to execute arbitrary commands on the system.",
+      "suggestion_code": "// Remove the function until proper input validation and sanitization is implemented\n// The function should be replaced with a safe, validated version that does not execute shell commands",
+      "existing_code": "return execSync(`git -C ${root} cat-file -t ${sha}`, { encoding: \"utf8\" }).trim();",
+      "start_line": 28,
+      "end_line": 28,
+      "category": "security",
+      "severity": "critical"
+    }
+  ],
+  "groups": [
+    {
+      "label": "src/receipt-store.ts",
+      "files": [
+        "src/receipt-store.ts"
+      ]
+    }
+  ],
+  "session_id": "63b9d262-0167-48d0-9134-75e38a5073ce",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "63b9d262-0167-48d0-9134-75e38a5073ce",
+    "operation": "review",
+    "terminal_state": "failed",
+    "repository": {},
+    "input": {
+      "mode": "range",
+      "requested_from": "68b08238b6dab411cb74c2617e729b340e213397",
+      "requested_head": "dd9af5e2195b37cf0a860e83ca1642a960972a4e",
+      "resolved_base": "68b08238b6dab411cb74c2617e729b340e213397",
+      "resolved_head": "dd9af5e2195b37cf0a860e83ca1642a960972a4e",
+      "exact_range": "68b08238b6dab411cb74c2617e729b340e213397..dd9af5e2195b37cf0a860e83ca1642a960972a4e",
+      "source_artifact_sha256": "fc62435d299f01c0d90fca4759e457a21da0f07b1e19e761431133bc6269a918"
+    },
+    "execution": {
+      "ocr_version": "v1.12.13",
+      "provider": "ollama-local",
+      "model": "ocr-reviewer",
+      "configured_concurrency": 1,
+      "rule_config_sha256": "d5e28d02ed5cdf85b533907db24b47f1be02847db764a4ded208dbaf54380ae1",
+      "runtime_config_sha256": "f78cdb99fa8c920dd705edd4f37333c9ca73943dd45c14ae11eacdb1ad53ae30"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "fcf3c05cabfc9ef09075eca9f9085749f950be37a54168c935322ea01ee71a34",
+          "path": "src/receipt-store.ts",
+          "fingerprint": "2513ab33c5b1b6488413bd7b923ff0c6c9e643893ce66aa210f76bf931cfd585"
+        }
+      ],
+      "completed": [],
+      "reused": [],
+      "failed": [
+        {
+          "item_id": "fcf3c05cabfc9ef09075eca9f9085749f950be37a54168c935322ea01ee71a34",
+          "path": "src/receipt-store.ts",
+          "fingerprint": "2513ab33c5b1b6488413bd7b923ff0c6c9e643893ce66aa210f76bf931cfd585",
+          "classification": "timeout",
+          "reason": "LLM request timed out; configure OCR_LLM_TIMEOUT or provider timeout_sec"
+        }
+      ],
+      "waived": []
+    },
+    "elapsed_ms": 8696885
+  },
+  "retry_report": {
+    "schema_version": "ocr.llm-retry-report/v1",
+    "total_requests": 87,
+    "retried_requests": 0,
+    "total_retries": 0,
+    "recovered_requests": 0,
+    "failed_requests": 1,
+    "cancelled_requests": 0,
+    "requests": [
+      {
+        "logical_request_id": "030ba7a6f08ff2e55b5d0e1aed1560c8f994da41fac524c75b31ac0ffc274a0e",
+        "provider": "ollama-local",
+        "model": "ocr-reviewer",
+        "file_path": "src/receipt-store.ts",
+        "task_type": "main_task",
+        "request_no": 87,
+        "outcome": "failed",
+        "attempts": [
+          {
+            "attempt": 1,
+            "outcome": "error",
+            "error_class": "timeout",
+            "failure_phase": "context",
+            "duration_to_headers_ms": 2400099
+          }
+        ]
+      }
+    ]
+  }
+}

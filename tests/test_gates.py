@@ -18,8 +18,9 @@ spec.loader.exec_module(checker)
 
 def result(comments=None):
     return {
-        "status": "completed",
+        "status": "complete",
         "manifest": {
+            "terminal_state": "complete",
             "input": {"exact_range": f"{BASE}..{HEAD}"},
             "coverage": {"selected": ["x"], "completed": ["x"], "failed": []},
         },
@@ -120,6 +121,57 @@ class ReviewTests(unittest.TestCase):
         value = result()
         del value["manifest"]
         self.assertTrue(checker.check(value, BASE, HEAD))
+
+
+score_spec = importlib.util.spec_from_file_location("score", ROOT / "harness" / "score.py")
+scorer = importlib.util.module_from_spec(score_spec)
+score_spec.loader.exec_module(scorer)
+DATA = ROOT / "tests" / "data"
+# Real OCR v1.12.13 outputs from run 37969387764 (qwen3:4b, NOT_QUALIFIED).
+REAL_CLEAN = DATA / "real-ocr-1.12.13-clean-control-qwen3-4b.json"
+REAL_PLANTED = DATA / "real-ocr-1.12.13-planted-timeout-qwen3-4b.json"
+
+
+class RealOcrContractTests(unittest.TestCase):
+    def load(self, path):
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_real_successful_run_counts_as_complete(self):
+        clean = self.load(REAL_CLEAN)
+        self.assertEqual((clean["status"], clean["manifest"]["terminal_state"]), ("complete", "complete"))
+        self.assertTrue(scorer.complete(clean))
+        inp = clean["manifest"]["input"]
+        self.assertEqual(checker.check(clean, inp["resolved_base"], inp["resolved_head"]), [])
+
+    def test_real_failed_run_is_incomplete(self):
+        planted = self.load(REAL_PLANTED)
+        self.assertEqual(planted["status"], "failed")
+        self.assertFalse(scorer.complete(planted))
+
+    def test_real_artifacts_still_score_not_qualified(self):
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "harness" / "score.py"), str(ROOT / "harness" / "ground-truth.json"),
+             str(REAL_PLANTED), str(REAL_CLEAN)],
+            capture_output=True, text=True, check=False,
+        )
+        output = json.loads(completed.stdout)
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(output["clean_completed"])
+        self.assertFalse(output["planted_completed"])
+        self.assertEqual(output["automatic_verdict"], "NOT_QUALIFIED")
+
+    def test_noncomplete_status_vocabulary_is_rejected(self):
+        for status, terminal in [("completed", "complete"), ("complete", "partial"),
+                                 ("partial", "partial"), ("skipped", "skipped"), ("complete", None)]:
+            value = result()
+            value["status"] = status
+            if terminal is None:
+                del value["manifest"]["terminal_state"]
+            else:
+                value["manifest"]["terminal_state"] = terminal
+            self.assertFalse(scorer.complete(value), (status, terminal))
+            self.assertTrue(checker.check(value, BASE, HEAD), (status, terminal))
 
 
 if __name__ == "__main__":

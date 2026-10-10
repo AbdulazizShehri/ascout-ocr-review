@@ -1,0 +1,121 @@
+{
+  "status": "complete",
+  "llm": {
+    "provider": "ollama-local",
+    "model": "ocr-reviewer"
+  },
+  "message": "Review complete: 1 finding(s) across 1 selected item(s).",
+  "summary": {
+    "files_reviewed": 1,
+    "comments": 1,
+    "total_tokens": 921828,
+    "input_tokens": 914305,
+    "output_tokens": 7523,
+    "cache_read_tokens": 907799,
+    "elapsed": "1h56m42s"
+  },
+  "tool_calls": {
+    "total": 2,
+    "by_tool": {
+      "code_comment": 1,
+      "code_search": 1
+    },
+    "failure": 0,
+    "failure_by_tool": {},
+    "failure_details": []
+  },
+  "comments": [
+    {
+      "path": "src/receipt-store.ts",
+      "content": "The receiptObjectType function executes git commands with user-provided input without proper validation, creating a potential code injection vulnerability. The sha parameter is directly used in the command string, which could allow arbitrary command execution. This should be avoided by using a safer approach such as a direct object lookup or a secure API call.",
+      "suggestion_code": "const gitObject = { \\n  'commit': 'commit', \\n  'tree': 'tree', \\n  'blob': 'blob', \\n  'tag': 'tag', \\n  'loose': 'loose', \\n  'object': 'object' \\n}; \\n\n// Safe lookup instead of executing git command \\nif (!SHA.test(sha)) throw new Error(\"sha must be a full lowercase SHA-1\"); \\nreturn gitObject[sha.substring(0, 1).toLowerCase()] || 'unknown';",
+      "existing_code": "return execFileSync(\"git\", [\"-C\", root, \"cat-file\", \"-t\", sha], { encoding: \"utf8\" }).trim();",
+      "start_line": 28,
+      "end_line": 28,
+      "category": "security",
+      "severity": "critical"
+    }
+  ],
+  "groups": [
+    {
+      "label": "src/receipt-store.ts",
+      "files": [
+        "src/receipt-store.ts"
+      ]
+    }
+  ],
+  "session_id": "20f9ec1f-6fed-4c33-96d8-36e484f191a3",
+  "manifest": {
+    "schema_version": "ocr.run-manifest/v1",
+    "run_id": "20f9ec1f-6fed-4c33-96d8-36e484f191a3",
+    "operation": "review",
+    "terminal_state": "complete",
+    "repository": {},
+    "input": {
+      "mode": "range",
+      "requested_from": "68b08238b6dab411cb74c2617e729b340e213397",
+      "requested_head": "0a29c89346c6b7ce3a956c59fe0080cea2adf35d",
+      "resolved_base": "68b08238b6dab411cb74c2617e729b340e213397",
+      "resolved_head": "0a29c89346c6b7ce3a956c59fe0080cea2adf35d",
+      "exact_range": "68b08238b6dab411cb74c2617e729b340e213397..0a29c89346c6b7ce3a956c59fe0080cea2adf35d",
+      "source_artifact_sha256": "11c9522ad9a90f0d0ba066d42778987236a31e41246f8d1dbb8b9de515fa4dce"
+    },
+    "execution": {
+      "ocr_version": "v1.12.13",
+      "provider": "ollama-local",
+      "model": "ocr-reviewer",
+      "configured_concurrency": 1,
+      "rule_config_sha256": "d5e28d02ed5cdf85b533907db24b47f1be02847db764a4ded208dbaf54380ae1",
+      "runtime_config_sha256": "f78cdb99fa8c920dd705edd4f37333c9ca73943dd45c14ae11eacdb1ad53ae30"
+    },
+    "coverage": {
+      "selected": [
+        {
+          "item_id": "fcf3c05cabfc9ef09075eca9f9085749f950be37a54168c935322ea01ee71a34",
+          "path": "src/receipt-store.ts",
+          "fingerprint": "e5f655e723d27804604a38ff216930ca0a1a55dadb8d9a990bc3f0bd010b0f70"
+        }
+      ],
+      "completed": [
+        {
+          "item_id": "fcf3c05cabfc9ef09075eca9f9085749f950be37a54168c935322ea01ee71a34",
+          "path": "src/receipt-store.ts",
+          "fingerprint": "e5f655e723d27804604a38ff216930ca0a1a55dadb8d9a990bc3f0bd010b0f70"
+        }
+      ],
+      "reused": [],
+      "failed": [],
+      "waived": []
+    },
+    "elapsed_ms": 7002425
+  },
+  "retry_report": {
+    "schema_version": "ocr.llm-retry-report/v1",
+    "total_requests": 102,
+    "retried_requests": 0,
+    "total_retries": 0,
+    "recovered_requests": 0,
+    "failed_requests": 1,
+    "cancelled_requests": 0,
+    "requests": [
+      {
+        "logical_request_id": "918741793c0790400c196974464725e6999dfd93ce2eff48872e0ba7b5c17492",
+        "provider": "ollama-local",
+        "model": "ocr-reviewer",
+        "file_path": "src/receipt-store.ts",
+        "task_type": "main_task",
+        "request_no": 101,
+        "outcome": "failed",
+        "attempts": [
+          {
+            "attempt": 1,
+            "outcome": "error",
+            "error_class": "timeout",
+            "failure_phase": "context",
+            "duration_to_headers_ms": 2400000
+          }
+        ]
+      }
+    ]
+  }
+}
