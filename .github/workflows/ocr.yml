@@ -1,10 +1,12 @@
 name: OCR review
 
 # Alibaba OpenCodeReview on a GitHub-hosted runner.
-# - dashscope-intl / dashscope-cn: Alibaba Cloud Model Studio (Qwen) through
-#   OCR's OpenAI-compatible provider. The key comes only from the
+# - dashscope-cn only: Alibaba Cloud Model Studio (Qwen) through
+#   OCR's OpenAI-compatible provider. Beijing free-quota region only.
+#   The key comes only from the
 #   DASHSCOPE_API_KEY repository secret and is read via api_key_cmd, never
-#   written to OCR's config file. A hard per-review token budget applies.
+#   written to OCR's config file. A token budget limits work but is NOT a billing cap.
+#   Every review re-qualifies the identical model before examining Ascout code.
 # - ollama-local: model inside the runner on 127.0.0.1, no secrets.
 on:
   workflow_dispatch:
@@ -17,16 +19,20 @@ on:
       provider:
         description: "Inference provider"
         type: choice
-        options: [dashscope-intl, dashscope-cn, ollama-local]
-        default: dashscope-intl
+        options: [dashscope-cn, ollama-local]
+        default: dashscope-cn
       model:
-        description: "DashScope model ID (qwen...); ignored for ollama-local"
+        description: "Only qwen3-coder-plus is permitted for the protected free tier; ignored for ollama-local"
         type: string
         default: qwen3-coder-plus
       token_budget:
-        description: "Hard cap on input+output tokens per OCR run (DashScope)"
+        description: "OCR work budget per invocation (NOT a billing guarantee; max 150000)"
         type: string
-        default: "600000"
+        default: "100000"
+      free_quota_only_confirmed:
+        description: "I verified Free Quota Only is ACTIVE for qwen3-coder-plus in Beijing (not just requested)"
+        type: boolean
+        default: false
       ascout_base:
         description: "review mode: full 40-hex base SHA"
         type: string
@@ -52,6 +58,7 @@ jobs:
       PROVIDER: ${{ inputs.provider }}
       DS_MODEL: ${{ inputs.model }}
       TOKEN_BUDGET: ${{ inputs.token_budget }}
+      FREE_QUOTA_CONFIRMED: ${{ inputs.free_quota_only_confirmed }}
       ASCOUT_BASE: ${{ inputs.ascout_base }}
       ASCOUT_HEAD: ${{ inputs.ascout_head }}
       ASCOUT_REPO: https://github.com/TheHalfMoon/Ascout.git
@@ -84,9 +91,12 @@ jobs:
               [[ "$v" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHAs must be full lowercase 40-hex"; exit 1; }
             done
           fi
-          if [ "$PROVIDER" != ollama-local ]; then
-            [[ "$DS_MODEL" =~ ^qwen[0-9a-z.-]{1,40}$ ]] || { echo "::error::model must be a qwen... identifier"; exit 1; }
-            [[ "$TOKEN_BUDGET" =~ ^[0-9]{4,7}$ ]] && [ "$TOKEN_BUDGET" -le 2000000 ] || { echo "::error::token_budget must be 1000..2000000"; exit 1; }
+          [[ "$MODE" = qualify || "$MODE" = review ]] || { echo "::error::unsupported mode"; exit 1; }
+          [[ "$PROVIDER" = dashscope-cn || "$PROVIDER" = ollama-local ]] || { echo "::error::unsupported provider or paid region"; exit 1; }
+          if [ "$PROVIDER" = dashscope-cn ]; then
+            [ "$FREE_QUOTA_CONFIRMED" = true ] || { echo "::error::confirm ACTIVE Beijing Free Quota Only in Model Studio before dispatch; this runner cannot verify Alibaba billing settings"; exit 1; }
+            [ "$DS_MODEL" = qwen3-coder-plus ] || { echo "::error::only the confirmed free-quota model qwen3-coder-plus is allowed"; exit 1; }
+            [[ "$TOKEN_BUDGET" =~ ^[0-9]{5,6}$ ]] && [ "$TOKEN_BUDGET" -ge 10000 ] && [ "$TOKEN_BUDGET" -le 150000 ] || { echo "::error::token_budget must be 10000..150000"; exit 1; }
             [ "$HAS_DASHSCOPE_KEY" = true ] || { echo "::error::DASHSCOPE_API_KEY repository secret is not set"; exit 1; }
           fi
           { echo "mode=$MODE provider=$PROVIDER model=$([ "$PROVIDER" = ollama-local ] && echo "$OLLAMA_MODEL" || echo "$DS_MODEL") token_budget=$TOKEN_BUDGET"
@@ -153,9 +163,8 @@ jobs:
               ocr config set model ocr-reviewer
               curl -fs "http://$OLLAMA_HOST/api/generate" -d '{"model":"ocr-reviewer","prompt":"ok","stream":false,"options":{"num_predict":1}}' > /dev/null
               ;;
-            dashscope-intl|dashscope-cn)
-              url=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-              [ "$PROVIDER" = dashscope-cn ] && url=https://dashscope.aliyuncs.com/compatible-mode/v1
+            dashscope-cn)
+              url=https://dashscope.aliyuncs.com/compatible-mode/v1
               ocr config set provider "$PROVIDER"
               ocr config set "custom_providers.$PROVIDER.url" "$url"
               ocr config set "custom_providers.$PROVIDER.protocol" openai
@@ -169,8 +178,8 @@ jobs:
           # Connectivity smoke test only; not a review and not a gate.
           ocr llm test > "$OUT/llm-test.txt" 2>&1 || echo "llm test exit=$? (non-gating)" | tee -a "$OUT/llm-test.txt"
 
-      - name: Qualify model on planted and clean fixtures
-        if: inputs.mode == 'qualify'
+      # Qualification runs in BOTH modes. A review cannot bypass this gate.
+      - name: Qualify model on planted and clean fixtures (mandatory)
         env:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
         run: |
@@ -180,13 +189,20 @@ jobs:
           cd "$RUNNER_TEMP/fx"
           base=$(git rev-parse main); a=$(git rev-parse change-a); b=$(git rev-parse change-b)
           echo "base=$base change-a=$a change-b=$b" | tee "$OUT/fixture-shas.txt"
+          qualification_start=$(date +%s)
           for run in "a:$a" "b:$b"; do
             name=${run%%:*}; head=${run#*:}
             start=$(date +%s)
-            ocr review --repo . --from "$base" --to "$head" --format json --audience agent \
-              --concurrency 1 --timeout 150 "${budget[@]}" --output "$OUT/qual-$name.json" 2> "$OUT/qual-$name.stderr.txt" || true
+            remaining=$((2700 - (start - qualification_start)))
+            [ "$remaining" -gt 0 ] || { echo "::error::45-minute qualification limit exceeded"; exit 1; }
+            available_kb=$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo)
+            [ "${available_kb:-0}" -ge 1048576 ] || { echo "::error::qualification RAM safety guard triggered"; exit 1; }
+            # Overall 45-minute gate; CLI timeout is a separate per-unit guard.
+            timeout --signal=TERM --kill-after=10s "${remaining}s" ocr review --repo . --from "$base" --to "$head" --format json --audience agent \
+              --concurrency 1 --timeout 150 "${budget[@]}" --output "$OUT/qual-$name.json" 2> "$OUT/qual-$name.stderr.txt"
             echo "qual-$name wall_seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/timings.txt"
           done
+          [ $(( $(date +%s) - qualification_start )) -le 2700 ] || { echo "::error::45-minute qualification limit exceeded"; exit 1; }
           python3 -I "$GITHUB_WORKSPACE/harness/score.py" "$GITHUB_WORKSPACE/harness/ground-truth.json" \
             "$OUT/qual-a.json" "$OUT/qual-b.json" | tee "$OUT/score.json"
           { echo '## OCR model qualification'; echo '```json'; cat "$OUT/score.json"; echo '```'; cat "$OUT/timings.txt"; } >> "$GITHUB_STEP_SUMMARY"
@@ -210,19 +226,9 @@ jobs:
           ocr review --repo . --from "$ASCOUT_BASE" --to "$ASCOUT_HEAD" --preview 2>&1 | tee "$OUT/preview.txt"
           start=$(date +%s)
           ocr review --repo . --from "$ASCOUT_BASE" --to "$ASCOUT_HEAD" --format json --audience agent \
-            --concurrency 1 --timeout 300 "${budget[@]}" --output "$OUT/review.json" 2> "$OUT/review.stderr.txt" || true
+            --concurrency 1 --timeout 300 "${budget[@]}" --output "$OUT/review.json" 2> "$OUT/review.stderr.txt"
           echo "review wall_seconds=$(( $(date +%s) - start ))" | tee "$OUT/timings.txt"
-          python3 -I - "$OUT/review.json" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          import json, sys
-          r = json.load(open(sys.argv[1]))
-          cov = (r.get("manifest") or {}).get("coverage") or {}
-          print("## OCR review", r.get("status"))
-          print("- llm:", r.get("llm"))
-          print("- range:", (r.get("manifest") or {}).get("input", {}).get("exact_range"))
-          print("- selected/completed/failed:", len(cov.get("selected", [])), len(cov.get("completed", [])), len(cov.get("failed", [])))
-          print("- tokens:", (r.get("summary") or {}).get("total_tokens"), "budget_exceeded:", (r.get("summary") or {}).get("budget_exceeded"))
-          print("- comments:", len(r.get("comments") or []))
-          EOF
+          python3 -I "$GITHUB_WORKSPACE/harness/check-review.py" "$OUT/review.json" "$ASCOUT_BASE" "$ASCOUT_HEAD" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Record resource use
         if: always()
