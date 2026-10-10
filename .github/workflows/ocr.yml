@@ -1,7 +1,11 @@
-name: OCR review on runner-local model
+name: OCR review
 
-# Zero-cost Alibaba OpenCodeReview on a GitHub-hosted runner. The model runs
-# inside the runner (Ollama on 127.0.0.1); no inference API, no secrets.
+# Alibaba OpenCodeReview on a GitHub-hosted runner.
+# - dashscope-intl / dashscope-cn: Alibaba Cloud Model Studio (Qwen) through
+#   OCR's OpenAI-compatible provider. The key comes only from the
+#   DASHSCOPE_API_KEY repository secret and is read via api_key_cmd, never
+#   written to OCR's config file. A hard per-review token budget applies.
+# - ollama-local: model inside the runner on 127.0.0.1, no secrets.
 on:
   workflow_dispatch:
     inputs:
@@ -10,6 +14,19 @@ on:
         type: choice
         options: [qualify, review]
         default: qualify
+      provider:
+        description: "Inference provider"
+        type: choice
+        options: [dashscope-intl, dashscope-cn, ollama-local]
+        default: dashscope-intl
+      model:
+        description: "DashScope model ID (qwen...); ignored for ollama-local"
+        type: string
+        default: qwen3-coder-plus
+      token_budget:
+        description: "Hard cap on input+output tokens per OCR run (DashScope)"
+        type: string
+        default: "600000"
       ascout_base:
         description: "review mode: full 40-hex base SHA"
         type: string
@@ -32,10 +49,13 @@ jobs:
     timeout-minutes: 340
     env:
       MODE: ${{ inputs.mode }}
+      PROVIDER: ${{ inputs.provider }}
+      DS_MODEL: ${{ inputs.model }}
+      TOKEN_BUDGET: ${{ inputs.token_budget }}
       ASCOUT_BASE: ${{ inputs.ascout_base }}
       ASCOUT_HEAD: ${{ inputs.ascout_head }}
       ASCOUT_REPO: https://github.com/TheHalfMoon/Ascout.git
-      MODEL: qwen3:4b-instruct-2507-q4_K_M
+      OLLAMA_MODEL: qwen3:4b-instruct-2507-q4_K_M
       MODEL_ID_PREFIX: 0edcdef34593
       OCR_BUILD: "v1.12.13 (fabbdb2"
       OLLAMA_VERSION: v0.40.2
@@ -44,6 +64,8 @@ jobs:
       OLLAMA_CONTEXT_LENGTH: "16384"
       OLLAMA_FLASH_ATTENTION: "1"
       OLLAMA_KV_CACHE_TYPE: q8_0
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
       OCR_LLM_TIMEOUT: "2400"
       OUT: ${{ github.workspace }}/out
     steps:
@@ -52,6 +74,8 @@ jobs:
           persist-credentials: false
 
       - name: Validate inputs
+        env:
+          HAS_DASHSCOPE_KEY: ${{ secrets.DASHSCOPE_API_KEY != '' }}
         run: |
           set -euo pipefail
           mkdir -p "$OUT"
@@ -60,9 +84,16 @@ jobs:
               [[ "$v" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHAs must be full lowercase 40-hex"; exit 1; }
             done
           fi
-          { echo "runner: $(nproc) vCPU, $(free -m | awk '/Mem:/{print $2}') MiB RAM"; uname -a; } | tee "$OUT/environment.txt"
+          if [ "$PROVIDER" != ollama-local ]; then
+            [[ "$DS_MODEL" =~ ^qwen[0-9a-z.-]{1,40}$ ]] || { echo "::error::model must be a qwen... identifier"; exit 1; }
+            [[ "$TOKEN_BUDGET" =~ ^[0-9]{4,7}$ ]] && [ "$TOKEN_BUDGET" -le 2000000 ] || { echo "::error::token_budget must be 1000..2000000"; exit 1; }
+            [ "$HAS_DASHSCOPE_KEY" = true ] || { echo "::error::DASHSCOPE_API_KEY repository secret is not set"; exit 1; }
+          fi
+          { echo "mode=$MODE provider=$PROVIDER model=$([ "$PROVIDER" = ollama-local ] && echo "$OLLAMA_MODEL" || echo "$DS_MODEL") token_budget=$TOKEN_BUDGET"
+            echo "runner: $(nproc) vCPU, $(free -m | awk '/Mem:/{print $2}') MiB RAM"; uname -a; } | tee "$OUT/environment.txt"
 
       - name: Install Ollama (pinned, checksum-verified)
+        if: inputs.provider == 'ollama-local'
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
@@ -72,17 +103,28 @@ jobs:
           echo "$RUNNER_TEMP/ollama/bin" >> "$GITHUB_PATH"
 
       - name: Start Ollama on loopback and pull the model
+        if: inputs.provider == 'ollama-local'
         run: |
           set -euo pipefail
           nohup ollama serve > "$OUT/ollama-serve.log" 2>&1 &
           for i in $(seq 1 30); do curl -fs "http://$OLLAMA_HOST/api/version" && break; sleep 1; done
-          ollama pull "$MODEL" > /dev/null
+          ollama pull "$OLLAMA_MODEL" > /dev/null
           ollama list | tee "$OUT/model.txt"
           grep -q "$MODEL_ID_PREFIX" "$OUT/model.txt" || { echo "::error::model ID mismatch"; exit 1; }
           # Same verified weights; only the CPU thread count changes (default used 2 of 4 vCPUs).
-          { echo "FROM $MODEL"; echo "PARAMETER num_thread $(nproc)"; } > "$RUNNER_TEMP/Modelfile"
+          { echo "FROM $OLLAMA_MODEL"; echo "PARAMETER num_thread $(nproc)"; } > "$RUNNER_TEMP/Modelfile"
           ollama create ocr-reviewer -f "$RUNNER_TEMP/Modelfile" > /dev/null
           ollama show ocr-reviewer --modelfile | grep -E '^(FROM|PARAMETER)' | tee -a "$OUT/model.txt"
+
+      - name: Install pinned gitleaks (checksum-verified)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLo "$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "${GITLEAKS_SHA256}  $f" | sha256sum -c -
+          mkdir gitleaks && tar -xzf "$f" -C gitleaks gitleaks && rm "$f"
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -96,25 +138,44 @@ jobs:
           ./node_modules/.bin/ocr --version | tee "$OUT/ocr-version.txt"
           grep -qF "$OCR_BUILD" "$OUT/ocr-version.txt" || { echo "::error::OCR build mismatch"; exit 1; }
 
-      - name: Configure OCR custom provider (runner-local Ollama)
+      - name: Configure OCR provider
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
         run: |
           set -euo pipefail
-          ocr config set provider ollama-local
-          ocr config set custom_providers.ollama-local.url "http://$OLLAMA_HOST/v1"
-          ocr config set custom_providers.ollama-local.protocol openai
-          ocr config set custom_providers.ollama-local.api_key ollama
-          ocr config set custom_providers.ollama-local.timeout_sec "$OCR_LLM_TIMEOUT"
-          ocr config set model ocr-reviewer
-          # Warm the model so the cold load is not charged to the first review request.
-          curl -fs "http://$OLLAMA_HOST/api/generate" -d '{"model":"ocr-reviewer","prompt":"ok","stream":false,"options":{"num_predict":1}}' > /dev/null
-          # Connectivity smoke test only; it has a fixed 120 s deadline inside OCR.
-          # Recorded as evidence, not a gate: the qualification below is the gate.
+          case "$PROVIDER" in
+            ollama-local)
+              ocr config set provider ollama-local
+              ocr config set custom_providers.ollama-local.url "http://$OLLAMA_HOST/v1"
+              ocr config set custom_providers.ollama-local.protocol openai
+              ocr config set custom_providers.ollama-local.api_key ollama
+              ocr config set custom_providers.ollama-local.timeout_sec "$OCR_LLM_TIMEOUT"
+              ocr config set model ocr-reviewer
+              curl -fs "http://$OLLAMA_HOST/api/generate" -d '{"model":"ocr-reviewer","prompt":"ok","stream":false,"options":{"num_predict":1}}' > /dev/null
+              ;;
+            dashscope-intl|dashscope-cn)
+              url=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+              [ "$PROVIDER" = dashscope-cn ] && url=https://dashscope.aliyuncs.com/compatible-mode/v1
+              ocr config set provider "$PROVIDER"
+              ocr config set "custom_providers.$PROVIDER.url" "$url"
+              ocr config set "custom_providers.$PROVIDER.protocol" openai
+              ocr config set "custom_providers.$PROVIDER.api_key_cmd" "printenv DASHSCOPE_API_KEY"
+              ocr config set "custom_providers.$PROVIDER.timeout_sec" 600
+              ocr config set model "$DS_MODEL"
+              ;;
+          esac
+          # The key must never reach the config file.
+          ! grep -rqsF "$DASHSCOPE_API_KEY" "$HOME/.config" "$HOME/.ocr" 2>/dev/null || [ -z "$DASHSCOPE_API_KEY" ] || { echo "::error::API key found in OCR config"; exit 1; }
+          # Connectivity smoke test only; not a review and not a gate.
           ocr llm test > "$OUT/llm-test.txt" 2>&1 || echo "llm test exit=$? (non-gating)" | tee -a "$OUT/llm-test.txt"
 
       - name: Qualify model on planted and clean fixtures
         if: inputs.mode == 'qualify'
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
         run: |
           set -euo pipefail
+          budget=(); [ "$PROVIDER" != ollama-local ] && budget=(--max-tokens-budget "$TOKEN_BUDGET")
           bash scripts/build-fixture.sh "$RUNNER_TEMP/fx"
           cd "$RUNNER_TEMP/fx"
           base=$(git rev-parse main); a=$(git rev-parse change-a); b=$(git rev-parse change-b)
@@ -123,7 +184,7 @@ jobs:
             name=${run%%:*}; head=${run#*:}
             start=$(date +%s)
             ocr review --repo . --from "$base" --to "$head" --format json --audience agent \
-              --concurrency 1 --timeout 150 --output "$OUT/qual-$name.json" 2> "$OUT/qual-$name.stderr.txt" || true
+              --concurrency 1 --timeout 150 "${budget[@]}" --output "$OUT/qual-$name.json" 2> "$OUT/qual-$name.stderr.txt" || true
             echo "qual-$name wall_seconds=$(( $(date +%s) - start ))" | tee -a "$OUT/timings.txt"
           done
           python3 -I "$GITHUB_WORKSPACE/harness/score.py" "$GITHUB_WORKSPACE/harness/ground-truth.json" \
@@ -132,37 +193,45 @@ jobs:
 
       - name: Review exact Ascout range
         if: inputs.mode == 'review'
+        env:
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
         run: |
           set -euo pipefail
+          budget=(); [ "$PROVIDER" != ollama-local ] && budget=(--max-tokens-budget "$TOKEN_BUDGET")
           git clone -q --filter=blob:none "$ASCOUT_REPO" "$RUNNER_TEMP/ascout"
           cd "$RUNNER_TEMP/ascout"
           git cat-file -e "$ASCOUT_HEAD^{commit}" 2>/dev/null || git fetch -q origin "$ASCOUT_HEAD"
           git cat-file -e "$ASCOUT_BASE^{commit}" 2>/dev/null || git fetch -q origin "$ASCOUT_BASE"
           git merge-base --is-ancestor "$ASCOUT_BASE" "$ASCOUT_HEAD" || { echo "::error::base is not an ancestor of head"; exit 1; }
           git checkout -q --detach "$ASCOUT_HEAD"
+          # No reviewed content leaves the runner unless the exact range scans clean.
+          gitleaks git --log-opts="$ASCOUT_BASE..$ASCOUT_HEAD" --redact --no-banner \
+            --report-format json --report-path "$OUT/gitleaks.json" . || { echo "::error::gitleaks found potential secrets; review not sent"; exit 1; }
           ocr review --repo . --from "$ASCOUT_BASE" --to "$ASCOUT_HEAD" --preview 2>&1 | tee "$OUT/preview.txt"
           start=$(date +%s)
           ocr review --repo . --from "$ASCOUT_BASE" --to "$ASCOUT_HEAD" --format json --audience agent \
-            --concurrency 1 --timeout 300 --output "$OUT/review.json" 2> "$OUT/review.stderr.txt" || true
+            --concurrency 1 --timeout 300 "${budget[@]}" --output "$OUT/review.json" 2> "$OUT/review.stderr.txt" || true
           echo "review wall_seconds=$(( $(date +%s) - start ))" | tee "$OUT/timings.txt"
           python3 -I - "$OUT/review.json" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
           import json, sys
           r = json.load(open(sys.argv[1]))
           cov = (r.get("manifest") or {}).get("coverage") or {}
           print("## OCR review", r.get("status"))
+          print("- llm:", r.get("llm"))
           print("- range:", (r.get("manifest") or {}).get("input", {}).get("exact_range"))
           print("- selected/completed/failed:", len(cov.get("selected", [])), len(cov.get("completed", [])), len(cov.get("failed", [])))
+          print("- tokens:", (r.get("summary") or {}).get("total_tokens"), "budget_exceeded:", (r.get("summary") or {}).get("budget_exceeded"))
           print("- comments:", len(r.get("comments") or []))
           EOF
 
       - name: Record resource use
         if: always()
         run: |
-          { free -m; ollama ps || true; } > "$OUT/resources.txt" 2>&1
+          { free -m; ollama ps 2>/dev/null || true; } > "$OUT/resources.txt" 2>&1
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: ocr-${{ inputs.mode }}-${{ github.run_id }}
+          name: ocr-${{ inputs.mode }}-${{ inputs.provider }}-${{ github.run_id }}
           path: out/
           retention-days: 90
