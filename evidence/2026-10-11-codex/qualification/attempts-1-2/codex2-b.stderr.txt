@@ -1,0 +1,1 @@
+2026-10-11T14:35:09.631292Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer realm=\"mcp\", resource_metadata=\"https://mcp.getrunpod.io/.well-known/oauth-protected-resource\"" })

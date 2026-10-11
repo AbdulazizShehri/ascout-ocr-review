@@ -1,0 +1,10 @@
+# Files (0 reviewable / 1 total)
+
+- mode: range
+- from: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- to: e9617003ee7973ce90374bdfe7d5c8095a4695f8
+- merge_base: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- total_insertions: 21
+- total_deletions: 6
+
+~~- `tests/t107-self-verification-harness.contract.test.ts` [modified] +21/-6 (excluded: default_path)~~

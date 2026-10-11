@@ -1,0 +1,21 @@
+{
+  "adapter": "codex-delegation-v1: Codex output wrapped for harness/score.py; NOT an OCR run manifest",
+  "status": "complete",
+  "manifest": {
+    "terminal_state": "complete",
+    "coverage": {
+      "selected": [
+        "src/receipt-store.ts"
+      ],
+      "completed": [
+        "src/receipt-store.ts"
+      ],
+      "failed": []
+    }
+  },
+  "summary": {
+    "budget_exceeded": false
+  },
+  "warnings": [],
+  "comments": []
+}

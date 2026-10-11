@@ -1,0 +1,25 @@
+{
+  "automatic_verdict": "PASS_AUTOMATIC_CRITERIA",
+  "clean_comment_count": 0,
+  "clean_comments_for_manual_adjudication": [],
+  "clean_completed": true,
+  "clean_coverage(sel,done,fail)": [
+    1,
+    1,
+    0
+  ],
+  "clean_status": "complete",
+  "matches": {
+    "P1": true,
+    "P2": true,
+    "P3": true
+  },
+  "planted_comment_count": 3,
+  "planted_completed": true,
+  "planted_coverage(sel,done,fail)": [
+    1,
+    1,
+    0
+  ],
+  "planted_status": "complete"
+}

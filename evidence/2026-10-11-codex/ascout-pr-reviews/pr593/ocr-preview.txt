@@ -1,0 +1,11 @@
+# Files (1 reviewable / 2 total)
+
+- mode: range
+- from: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- to: 1b03e0e95bce03f2c3cf6f0db905ba1faa96fadb
+- merge_base: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- total_insertions: 390
+- total_deletions: 0
+
+  - `src/assurance/security/sentrdel-workflow-normalization.ts` [added] +232/-0
+~~- `tests/assurance-security-t09a.test.ts` [added] +158/-0 (excluded: default_path)~~

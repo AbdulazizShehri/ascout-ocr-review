@@ -1,0 +1,46 @@
+{
+  "adapter": "codex-delegation-v1: Codex output wrapped for harness/score.py; NOT an OCR run manifest",
+  "status": "complete",
+  "manifest": {
+    "terminal_state": "complete",
+    "coverage": {
+      "selected": [
+        "src/receipt-store.ts"
+      ],
+      "completed": [
+        "src/receipt-store.ts"
+      ],
+      "failed": []
+    }
+  },
+  "summary": {
+    "budget_exceeded": false
+  },
+  "warnings": [],
+  "comments": [
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 11,
+      "end_line": 14,
+      "category": "security",
+      "severity": "high",
+      "content": "String-prefix matching does not enforce directory containment. For root '/data/receipts', name '../receipts-private/secret' resolves to a sibling path that still starts with the base and is read successfully. Use a path-relative containment check that rejects absolute paths and parent traversal. If receipt directories can contain untrusted symlinks, also verify the resolved filesystem target."
+    },
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 20,
+      "end_line": 21,
+      "category": "bug",
+      "severity": "high",
+      "content": "The inclusive loop returns count + 1 entries, including 65 entries when MAX_RECORDS is 64 and one entry when count is zero. It also reads beyond records.length, inserting undefined values asserted as T. Preserve slice semantics or use a strict upper bound capped by records.length."
+    },
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 28,
+      "end_line": 28,
+      "category": "security",
+      "severity": "high",
+      "content": "execSync executes an interpolated shell command, allowing shell metacharacters in root or sha to execute arbitrary commands. Unquoted root paths containing spaces also break normal usage. Use execFileSync with 'git' and a separate argument array, and validate sha as the expected object identifier."
+    }
+  ]
+}

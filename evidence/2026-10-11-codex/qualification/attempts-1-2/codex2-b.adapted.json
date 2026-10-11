@@ -1,0 +1,30 @@
+{
+  "adapter": "codex-delegation-v1: Codex output wrapped for harness/score.py; NOT an OCR run manifest",
+  "status": "complete",
+  "manifest": {
+    "terminal_state": "complete",
+    "coverage": {
+      "selected": [
+        "src/receipt-store.ts"
+      ],
+      "completed": [
+        "src/receipt-store.ts"
+      ],
+      "failed": []
+    }
+  },
+  "summary": {
+    "budget_exceeded": false
+  },
+  "warnings": [],
+  "comments": [
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 10,
+      "end_line": 16,
+      "category": "security",
+      "severity": "high",
+      "content": "The containment check only validates the lexical path; readFileSync follows symbolic links. A receipt name pointing to a symlink inside the store, or passing through a symlinked subdirectory, can therefore read a file outside the store root despite passing this check. Validate the canonical root and target paths before reading, and prevent symlink replacement races if the store can be modified by an untrusted party."
+    }
+  ]
+}

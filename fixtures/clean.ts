@@ -1,18 +1,23 @@
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { relative, resolve, isAbsolute, sep } from "node:path";
 
 export const MAX_RECORDS = 64;
 const SHA = /^[0-9a-f]{40}$/u;
 
-/** Load one receipt file; names must stay inside the store root. */
+/**
+ * Load one receipt file; names must stay inside the store root.
+ * Containment is checked on resolved real paths, so links cannot escape.
+ * Precondition: the store is not modified concurrently by an untrusted party.
+ */
 export function loadReceipt(root: string, name: string): string {
-  const base = resolve(root);
-  const target = resolve(base, name);
+  const base = realpathSync(root);
+  const target = realpathSync(resolve(base, name));
   const rel = relative(base, target);
   if (rel === "" || rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) {
     throw new Error("receipt path escapes the store root");
   }
+  if (!lstatSync(target).isFile()) throw new Error("receipt must be a regular file");
   return readFileSync(target, "utf8");
 }
 

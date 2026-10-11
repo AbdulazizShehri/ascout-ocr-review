@@ -1,0 +1,11 @@
+# Files (1 reviewable / 2 total)
+
+- mode: range
+- from: 0da75a0d0c5c07d3670d5808805e269caafacedd
+- to: 7087ab2ec2fcadaeebea694ae42c1588aa5cf659
+- merge_base: 0da75a0d0c5c07d3670d5808805e269caafacedd
+- total_insertions: 357
+- total_deletions: 0
+
+  - `src/assurance/security/sentrdel-t09-inventory.ts` [added] +138/-0
+~~- `tests/assurance-security-t09c.test.ts` [added] +219/-0 (excluded: default_path)~~
