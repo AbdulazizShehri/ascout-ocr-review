@@ -1,0 +1,202 @@
+diff --git a/src/assurance/security/sentrdel-observation-snapshot.ts b/src/assurance/security/sentrdel-observation-snapshot.ts
+new file mode 100644
+index 0000000..b27fc6c
+--- /dev/null
++++ b/src/assurance/security/sentrdel-observation-snapshot.ts
+@@ -0,0 +1,54 @@
++/**
++ * Defensive JSON-data snapshot for untrusted in-process observation inputs.
++ *
++ * Rejects own accessors, hidden/symbol keys, non-plain objects, sparse arrays,
++ * and objects reached more than once (JSON data is a tree; shared references
++ * would let a small input expand exponentially) before validation. This is NOT a process sandbox: Proxy traps and other code
++ * already running in this JavaScript process are outside this boundary.
++ */
++export function snapshotSentrdelObservationDataV1(value: unknown, depth = 0): unknown {
++  return snapshotTree(value, depth, new WeakSet<object>());
++}
++
++function snapshotTree(value: unknown, depth: number, seen: WeakSet<object>): unknown {
++  if (depth > 4) throw new TypeError("observation nesting limit exceeded");
++  if (value === null || typeof value === "string" ||
++      typeof value === "boolean" || typeof value === "number") return value;
++  if (typeof value !== "object") throw new TypeError("observation must be JSON data");
++  if (seen.has(value)) throw new TypeError("observation must not share or repeat object references");
++  seen.add(value);
++
++  const isArray = Array.isArray(value);
++  if (!isArray && ![Object.prototype, null].includes(Object.getPrototypeOf(value))) {
++    throw new TypeError("observation must be plain JSON data");
++  }
++  const descriptors = Object.getOwnPropertyDescriptors(value);
++  const keys = Reflect.ownKeys(descriptors);
++  if (keys.length > 65) throw new TypeError("observation property limit exceeded");
++  // Use the captured `length` descriptor only. A fresh `value.length` read can
++  // reach a Proxy `get` trap and differ between checks, admitting a sparse array.
++  const length: unknown = isArray ? descriptors["length" as keyof typeof descriptors]?.value : 0;
++  if (isArray && (typeof length !== "number" || !Number.isSafeInteger(length) ||
++      length > 64 || keys.length !== length + 1)) {
++    throw new TypeError("observation arrays must be dense and bounded");
++  }
++  const result: Record<string, unknown> | unknown[] = isArray ? [] : Object.create(null);
++  for (const key of keys) {
++    if (typeof key !== "string") throw new TypeError("observation symbol keys forbidden");
++    if (isArray && key === "length") continue;
++    const descriptor = descriptors[key];
++    if (!descriptor || !Object.hasOwn(descriptor, "value") || !descriptor.enumerable ||
++        key === "__proto__") {
++      throw new TypeError("observation requires enumerable own data properties");
++    }
++    if (isArray && (!/^(0|[1-9][0-9]*)$/u.test(key) ||
++        Number(key) >= (length as number))) {
++      throw new TypeError("observation array keys must be indices");
++    }
++    Object.defineProperty(result, key, {
++      value: snapshotTree(descriptor.value, depth + 1, seen),
++      enumerable: true, configurable: false, writable: false,
++    });
++  }
++  return Object.freeze(result);
++}
+diff --git a/src/assurance/security/sentrdel-workflow-normalization.ts b/src/assurance/security/sentrdel-workflow-normalization.ts
+index f30ae74..e0bba40 100644
+--- a/src/assurance/security/sentrdel-workflow-normalization.ts
++++ b/src/assurance/security/sentrdel-workflow-normalization.ts
+@@ -7,6 +7,7 @@
+  * generic IaC remains unsupported and must be reported separately.
+  */
+ import { createHash } from "node:crypto";
++import { snapshotSentrdelObservationDataV1 } from "./sentrdel-observation-snapshot.js";
+ import {
+   buildSentrdelCapabilitiesV1,
+   getSentrdelCapabilityV1,
+@@ -113,7 +114,7 @@ function record(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
+-export function validateSentrdelWorkflowInputV1(input: unknown): SentrdelWorkflowValidationV1 {
++function validatePlainSentrdelWorkflowInputV1(input: unknown): SentrdelWorkflowValidationV1 {
+   const reasons: string[] = [];
+   if (!record(input)) {
+     return { valid: false, reasons: Object.freeze(["input must be a record"]) };
+@@ -175,13 +176,29 @@ export function validateSentrdelWorkflowInputV1(input: unknown): SentrdelWorkflo
+   return Object.freeze({ valid: reasons.length === 0, reasons: Object.freeze(reasons) });
+ }
+ 
++/**
++ * Validate a stable snapshot; invalid accessors/hidden data fail closed without
++ * running getters. All exported entry points enforce this boundary themselves.
++ */
++export function validateSentrdelWorkflowInputV1(value: unknown): SentrdelWorkflowValidationV1 {
++  try {
++    return validatePlainSentrdelWorkflowInputV1(snapshotSentrdelObservationDataV1(value));
++  } catch {
++    return Object.freeze({
++      valid: false,
++      reasons: Object.freeze(["input must be immutable plain JSON data"]),
++    });
++  }
++}
++
+ /** This is data normalization, not a scan, review result, or proof of runtime execution. */
+ export function normalizeSentrdelWorkflowObservationV1(
+   value: unknown,
+ ): SentrdelWorkflowObservationV1 {
+-  const check = validateSentrdelWorkflowInputV1(value);
++  const stable = snapshotSentrdelObservationDataV1(value);
++  const check = validatePlainSentrdelWorkflowInputV1(stable);
+   if (!check.valid) throw new TypeError(`invalid workflow observation: ${check.reasons.join("; ")}`);
+-  const input = value as SentrdelWorkflowInputV1;
++  const input = stable as SentrdelWorkflowInputV1;
+   const unknown = Object.freeze([...input.unknown_tokens].sort());
+   const identity = [
+     SENTRDEL_WORKFLOW_PHASE_AUTHORITY, input.request_id, input.attempt_id,
+diff --git a/tests/assurance-security-t09a.test.ts b/tests/assurance-security-t09a.test.ts
+index f656504..6199b0f 100644
+--- a/tests/assurance-security-t09a.test.ts
++++ b/tests/assurance-security-t09a.test.ts
+@@ -8,6 +8,7 @@ import {
+ } from "../src/assurance/security/sentrdel-workflow-normalization.js";
+ import { SENTRDEL_ENGINE_ID, SENTRDEL_ENGINE_VERSION } from "../src/assurance/security/sentrdel-engine-boundary.js";
+ import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "../src/assurance/security/sentrdel-source-pin.js";
++import { snapshotSentrdelObservationDataV1 } from "../src/assurance/security/sentrdel-observation-snapshot.js";
+ 
+ const HEAD = "a".repeat(40);
+ const DIGEST = "b".repeat(64);
+@@ -147,6 +148,76 @@ describe("UA-P06-T09A bounded CI observation normalization", () => {
+     }
+   });
+ 
++  it("refuses accessor-driven identity changes at direct entry points", () => {
++    let getterCalls = 0;
++    const accessor = { ...input() };
++    Object.defineProperty(accessor, "source_head", {
++      enumerable: true,
++      get() {
++        getterCalls += 1;
++        return getterCalls < 2 ? "a".repeat(40) : "b".repeat(40);
++      },
++    });
++    expect(validateSentrdelWorkflowInputV1(accessor).valid).toBe(false);
++    expect(() => normalizeSentrdelWorkflowObservationV1(accessor)).toThrow(TypeError);
++    expect(getterCalls).toBe(0);
++
++    const hidden = { ...input() };
++    Object.defineProperty(hidden, "assurance_override", { value: "PASS", enumerable: false });
++    const symbolic = { ...input(), [Symbol("authority")]: "SUPPORTED" };
++    const sparse = Array(1);
++    const nested = ["TIMEOUT"];
++    Object.defineProperty(nested, "0", { enumerable: true, get: () => "TIMEOUT" });
++    for (const candidate of [hidden, symbolic, input({ unknown_tokens: sparse }),
++      input({ unknown_tokens: nested })]) {
++      expect(validateSentrdelWorkflowInputV1(candidate).valid).toBe(false);
++      expect(() => normalizeSentrdelWorkflowObservationV1(candidate)).toThrow(TypeError);
++    }
++    expect(normalizeSentrdelWorkflowObservationV1(input()).authority)
++      .toBe("CONFIG_OBSERVATION_ONLY");
++  });
++
++  it("uses the captured array length, so a Proxy cannot smuggle a hole past validation", () => {
++    // Keys 0 and 2 only. The `get` trap answers `length` with 2 on the read that
++    // compares the key count and 3 afterwards; any fresh read admits the hole.
++    const lyingTokens = () => {
++      const target: string[] = ["PARSER_UNSUPPORTED", "x", "TIMEOUT"];
++      delete (target as unknown as Record<string, unknown>)[1];
++      let reads = 0;
++      return new Proxy(target, {
++        get(t, key, receiver) {
++          if (key === "length") return ++reads === 2 ? 2 : 3;
++          return Reflect.get(t, key, receiver);
++        },
++      });
++    };
++    const candidate = input({ coverage_state: "PARTIAL", unknown_tokens: lyingTokens() });
++    expect(validateSentrdelWorkflowInputV1(candidate).valid).toBe(false);
++    expect(() => normalizeSentrdelWorkflowObservationV1(
++      input({ coverage_state: "PARTIAL", unknown_tokens: lyingTokens() }),
++    )).toThrow(TypeError);
++  });
++
++  it("rejects shared or cyclic object references so small inputs cannot expand", () => {
++    const shared = { a: 1 };
++    expect(() => snapshotSentrdelObservationDataV1({ x: shared, y: shared })).toThrow(/share or repeat/);
++    const cyclic: Record<string, unknown> = {};
++    cyclic["self"] = cyclic;
++    expect(() => snapshotSentrdelObservationDataV1(cyclic)).toThrow(TypeError);
++    // Four objects, each with 65 properties pointing at the next: a tree copy
++    // would perform about 65^4 property definitions.
++    let node: unknown = 1;
++    for (let level = 0; level < 4; level += 1) {
++      const next: Record<string, unknown> = {};
++      for (let key = 0; key < 65; key += 1) next[`k${key}`] = node;
++      node = next;
++    }
++    expect(() => snapshotSentrdelObservationDataV1(node)).toThrow(/share or repeat/);
++    // Distinct objects with equal content and repeated primitives remain valid.
++    expect(snapshotSentrdelObservationDataV1({ x: { a: 1 }, y: { a: 1 }, z: [1, 1, "s", "s"] }))
++      .toEqual({ x: { a: 1 }, y: { a: 1 }, z: [1, 1, "s", "s"] });
++  });
++
+   it("refuses malformed nonrecord input and unknown arrays", () => {
+     for (const value of [null, undefined, [], 1, "ready"]) {
+       expect(validateSentrdelWorkflowInputV1(value).valid).toBe(false);
