@@ -1,0 +1,4 @@
+CodeQL@2.19.0 js/xss level=error class=INFERENCE truth=false paths=src/web/render page.ts:40
+CodeQL@2.19.0 js/xss level=none class=INFERENCE truth=false paths=-
+observations 2 empty_import_is_clean false sarif_is_canonical_truth false assurance_effect NONE
+tampered SARIF refused: true
