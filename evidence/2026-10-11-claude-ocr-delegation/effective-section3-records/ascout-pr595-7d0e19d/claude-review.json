@@ -1,0 +1,1 @@
+{"comments":[{"path":"src/assurance/security/sentrdel-t09-inventory.ts","category":"maintainability","severity":"medium","content":"Nested ternary in comparator (OCR rule); adjudicated, follow-up issue","resolution":"ADJUDICATED"}]}

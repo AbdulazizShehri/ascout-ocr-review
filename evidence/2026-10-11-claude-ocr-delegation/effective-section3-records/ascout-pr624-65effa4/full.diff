@@ -1,0 +1,345 @@
+diff --git a/src/assurance/security/sentrdel-observation-read.ts b/src/assurance/security/sentrdel-observation-read.ts
+new file mode 100644
+index 0000000..8797516
+--- /dev/null
++++ b/src/assurance/security/sentrdel-observation-read.ts
+@@ -0,0 +1,49 @@
++/**
++ * Accessor-free reads of UA-P06-T04 observations for downstream consumers.
++ *
++ * T04 records share frozen sub-objects, so they cannot pass the tree-only
++ * snapshot. Reading each needed field through its own data-property
++ * descriptor gives the same guarantee: no caller getter ever runs. Records
++ * that claim more than a pinned T04 observation are refused, never downgraded.
++ */
++import { containsSecretMaterialV1, containsExternalAttestationV1 } from "./sentrdel-evidence-normalization.js";
++import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++
++export const SENTRDEL_NON_PROMOTED_OBSERVATION: Readonly<Record<string, unknown>> = Object.freeze({
++  schema_version: 1, phase_authority: "UA-P06-T04", authority: "OBSERVATION_ONLY",
++  engine_pin: SENTRDEL_PINNED_REVISION, engine_tree: SENTRDEL_PINNED_TREE, assurance_effect: "NONE",
++  finding_emitted: false, claim_assessment_emitted: false, global_clean_claimed: false, remediation_verified: false,
++});
++
++const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
++
++/** Own data property only; an accessor is refused without being invoked. */
++export function readOwnDataV1(record: unknown, key: string, fail: (reason: string) => never): unknown {
++  if (typeof record !== "object" || record === null) fail(`${key} needs a record`);
++  const descriptor = Object.getOwnPropertyDescriptor(record, key);
++  if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) fail(`${key} must be an own data property`);
++  return descriptor.value;
++}
++
++/** Dense bounded array read through descriptors. */
++export function readOwnListV1(value: unknown, what: string, max: number, fail: (reason: string) => never): unknown[] {
++  if (!Array.isArray(value)) fail(`${what} must be an array`);
++  const length = readOwnDataV1(value, "length", fail);
++  if (!Number.isSafeInteger(length) || (length as number) > max) fail(`${what} must be bounded`);
++  return Array.from({ length: length as number }, (_, index) => readOwnDataV1(value, String(index), fail));
++}
++
++/** Bounded identifier that may be persisted: no secret shape, no self-attestation. */
++export function readSafeIdV1(value: unknown, what: string, fail: (reason: string) => never): string {
++  if (typeof value !== "string" || !SAFE_ID.test(value)) fail(`${what} is invalid`);
++  if (containsSecretMaterialV1(value) || containsExternalAttestationV1(value)) {
++    fail(`${what} may not contain secrets or self-attestation`);
++  }
++  return value;
++}
++
++export function assertNonPromotedObservationV1(record: unknown, fail: (reason: string) => never): void {
++  for (const [key, expected] of Object.entries(SENTRDEL_NON_PROMOTED_OBSERVATION)) {
++    if (readOwnDataV1(record, key, fail) !== expected) fail(`observation ${key} claims more than a pinned T04 observation`);
++  }
++}
+diff --git a/src/assurance/security/sentrdel-remediation-retest.ts b/src/assurance/security/sentrdel-remediation-retest.ts
+new file mode 100644
+index 0000000..bceab32
+--- /dev/null
++++ b/src/assurance/security/sentrdel-remediation-retest.ts
+@@ -0,0 +1,158 @@
++/**
++ * UA-P06-T13 — remediation/retest lifecycle.
++ *
++ * A fix without new evidence stays open (FIX_WITHOUT_RETEST != VERIFIED). A
++ * claimed fix for a UA-P06-T04 observation can only move toward closure with a
++ * retest executed at the fix head whose complete, unknown-free coverage
++ * includes the original location and which does not re-observe the same rule
++ * at the same path. Even then the result is supporting evidence, never a
++ * verified remediation or an assurance claim. The pinned Sentrdel donor has no
++ * retest lifecycle; this contract is Ascout-native.
++ */
++import { createHash } from "node:crypto";
++import { snapshotSentrdelObservationDataV1 } from "./sentrdel-observation-snapshot.js";
++import { SENTRDEL_OBSERVATION_COVERAGE_STATES } from "./sentrdel-evidence-normalization.js";
++import {
++  assertNonPromotedObservationV1, readOwnDataV1, readOwnListV1, readSafeIdV1,
++} from "./sentrdel-observation-read.js";
++
++export const SENTRDEL_REMEDIATION_AUTHORITY = "UA-P06-T13" as const;
++export const SENTRDEL_RETEST_MAX_OBSERVATIONS = 4_096 as const;
++/** No VERIFIED, FIXED, or CLOSED member: a retest can support a fix, never verify it. */
++export const SENTRDEL_REMEDIATION_STATES = [
++  "OPEN_FIX_UNVERIFIED", "OPEN_STILL_OBSERVED", "OPEN_RETEST_INCOMPLETE", "RETEST_NOT_REOBSERVED",
++] as const;
++export type SentrdelRemediationStateV1 = (typeof SENTRDEL_REMEDIATION_STATES)[number];
++
++const SHA1 = /^[0-9a-f]{40}$/u;
++const SHA256 = /^[0-9a-f]{64}$/u;
++const FIX_KEYS = ["schema_version", "fix_ref", "fix_head"];
++const RUN_KEYS = ["schema_version", "source_head", "request_id", "attempt_id", "capability_id", "execution_state",
++  "coverage_state", "scanned_scope", "unknown_states", "evidence_ref", "evidence_digest"];
++
++function fail(reason: string): never {
++  throw new TypeError(`invalid remediation retest: ${reason}`);
++}
++
++interface Identity {
++  readonly observation_id: string;
++  readonly source_head: string;
++  readonly request_id: string;
++  readonly attempt_id: string;
++  readonly capability_id: string;
++  readonly rule_id: string | null;
++  readonly path: string | null;
++}
++
++function readObservation(raw: unknown, what: string): Identity {
++  assertNonPromotedObservationV1(raw, fail);
++  const head = readOwnDataV1(raw, "source_head", fail);
++  if (typeof head !== "string" || !SHA1.test(head)) fail(`${what} source_head is invalid`);
++  const rule = readOwnDataV1(raw, "rule_id", fail);
++  const path = readOwnDataV1(readOwnDataV1(raw, "location", fail), "path", fail);
++  return {
++    observation_id: readSafeIdV1(readOwnDataV1(raw, "observation_id", fail), `${what} observation_id`, fail),
++    source_head: head,
++    request_id: readSafeIdV1(readOwnDataV1(raw, "request_id", fail), `${what} request_id`, fail),
++    attempt_id: readSafeIdV1(readOwnDataV1(raw, "attempt_id", fail), `${what} attempt_id`, fail),
++    capability_id: readSafeIdV1(readOwnDataV1(raw, "capability_id", fail), `${what} capability_id`, fail),
++    rule_id: rule === null ? null : readSafeIdV1(rule, `${what} rule_id`, fail),
++    path: path === null ? null : readSafeIdV1(path, `${what} path`, fail),
++  };
++}
++
++function record(raw: unknown, keys: readonly string[], what: string): Record<string, unknown> {
++  const value = snapshotSentrdelObservationDataV1(raw);
++  if (typeof value !== "object" || value === null || Array.isArray(value)) fail(`${what} must be a record`);
++  const own = Object.keys(value);
++  if (own.length !== keys.length || !own.every(key => keys.includes(key))) fail(`${what} keys must match the bounded schema`);
++  if ((value as Record<string, unknown>)["schema_version"] !== 1) fail(`${what} schema_version must be 1`);
++  return value as Record<string, unknown>;
++}
++
++function stringList(value: unknown, what: string): string[] {
++  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) fail(`${what} must be a string array`);
++  return (value as string[]).map(item => readSafeIdV1(item, what, fail));
++}
++
++/** A scanned-scope entry covers a path when it names it or one of its parent directories. */
++function inScope(path: string, scope: readonly string[]): boolean {
++  return scope.some(entry => entry === path || path.startsWith(`${entry}/`));
++}
++
++/**
++ * `retestRun` and `retestObservations` are both null when no retest exists.
++ * An empty observation list with a run means the retest re-observed nothing.
++ */
++export function assessSentrdelRemediationV1(
++  original: unknown, fix: unknown, retestRun: unknown, retestObservations: unknown,
++) {
++  const origin = readObservation(original, "original");
++  const claim = record(fix, FIX_KEYS, "fix");
++  const fixRef = readSafeIdV1(claim["fix_ref"], "fix_ref", fail);
++  const fixHead = claim["fix_head"];
++  if (typeof fixHead !== "string" || !SHA1.test(fixHead)) fail("fix_head must be a Git SHA-1");
++  if (fixHead === origin.source_head) fail("a fix must be a different revision from the observed one");
++
++  let state: SentrdelRemediationStateV1 = "OPEN_FIX_UNVERIFIED";
++  const reasons: string[] = [];
++  let run: Record<string, unknown> | null = null;
++  let matches: string[] = [];
++  if ((retestRun === null) !== (retestObservations === null)) fail("a retest needs both its run and its observations");
++  if (retestRun !== null) {
++    run = record(retestRun, RUN_KEYS, "retest run");
++    if (run["source_head"] !== fixHead) fail("the retest must run at the fix head");
++    if (run["capability_id"] !== origin.capability_id) fail("the retest must use the original capability");
++    const requestId = readSafeIdV1(run["request_id"], "retest request_id", fail);
++    const attemptId = readSafeIdV1(run["attempt_id"], "retest attempt_id", fail);
++    readSafeIdV1(run["evidence_ref"], "retest evidence_ref", fail);
++    if (typeof run["evidence_digest"] !== "string" || !SHA256.test(run["evidence_digest"])) fail("retest evidence_digest");
++    if (!(SENTRDEL_OBSERVATION_COVERAGE_STATES as readonly unknown[]).includes(run["coverage_state"])) fail("retest coverage_state");
++    const scope = stringList(run["scanned_scope"], "retest scanned_scope");
++    const unknown = stringList(run["unknown_states"], "retest unknown_states");
++    const observed = readOwnListV1(retestObservations, "retest observations", SENTRDEL_RETEST_MAX_OBSERVATIONS, fail)
++      .map(item => readObservation(item, "retest"));
++    for (const item of observed) {
++      if (item.source_head !== fixHead || item.request_id !== requestId || item.attempt_id !== attemptId ||
++          item.capability_id !== origin.capability_id) fail("retest observations must come from the retest run");
++    }
++    matches = observed.filter(item => origin.rule_id !== null && item.rule_id === origin.rule_id && item.path === origin.path)
++      .map(item => item.observation_id).sort();
++    if (run["execution_state"] !== "EXECUTED") reasons.push("RETEST_NOT_EXECUTED");
++    if (run["coverage_state"] !== "COMPLETE_WITHIN_STATED_SCOPE") reasons.push("RETEST_COVERAGE_NOT_COMPLETE");
++    if (unknown.length > 0) reasons.push("RETEST_REPORTED_UNKNOWN_STATES");
++    if (origin.rule_id === null) reasons.push("ORIGINAL_HAS_NO_STABLE_RULE_IDENTITY");
++    if (origin.path === null || !inScope(origin.path, scope)) reasons.push("ORIGINAL_LOCATION_NOT_IN_RETEST_SCOPE");
++    if (matches.length > 0) {
++      state = "OPEN_STILL_OBSERVED";
++    } else if (reasons.length > 0) {
++      state = "OPEN_RETEST_INCOMPLETE";
++    } else {
++      state = "RETEST_NOT_REOBSERVED";
++    }
++  }
++  const evidenceRef = run === null ? null : run["evidence_ref"] as string;
++  const evidenceDigest = run === null ? null : run["evidence_digest"] as string;
++  const digest = createHash("sha256").update(JSON.stringify([
++    SENTRDEL_REMEDIATION_AUTHORITY, origin.observation_id, fixRef, fixHead, state, reasons, matches, evidenceRef, evidenceDigest,
++  ]), "utf8").digest("hex");
++  return Object.freeze({
++    schema_version: 1 as const,
++    phase_authority: SENTRDEL_REMEDIATION_AUTHORITY,
++    assessment_id: `remediation-retest:${digest}`,
++    observation_id: origin.observation_id,
++    observed_head: origin.source_head,
++    fix_ref: fixRef,
++    fix_head: fixHead,
++    state,
++    lifecycle_open: state !== "RETEST_NOT_REOBSERVED",
++    incomplete_reasons: Object.freeze([...reasons]),
++    reobserved_observation_ids: Object.freeze(matches),
++    retest_evidence_ref: evidenceRef,
++    retest_evidence_digest: evidenceDigest,
++    retest_supports_fix: state === "RETEST_NOT_REOBSERVED",
++    remediation_verified: false as const,
++    finding_emitted: false as const,
++    assurance_effect: "NONE" as const,
++  });
++}
+diff --git a/tests/assurance-security-t13.test.ts b/tests/assurance-security-t13.test.ts
+new file mode 100644
+index 0000000..f41d2f2
+--- /dev/null
++++ b/tests/assurance-security-t13.test.ts
+@@ -0,0 +1,120 @@
++import { describe, expect, it } from "vitest";
++import {
++  SENTRDEL_REMEDIATION_STATES,
++  assessSentrdelRemediationV1,
++} from "../src/assurance/security/sentrdel-remediation-retest.js";
++import { normalizeSentrdelEvidenceV1 } from "../src/assurance/security/sentrdel-evidence-normalization.js";
++import { SENTRDEL_ENGINE_ID } from "../src/assurance/security/sentrdel-engine-boundary.js";
++import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "../src/assurance/security/sentrdel-source-pin.js";
++
++const BEFORE = "1".repeat(40);
++const AFTER = "2".repeat(40);
++
++/** Real T04 observations, not stand-ins. */
++function observation(overrides: Record<string, unknown> = {}) {
++  return normalizeSentrdelEvidenceV1({
++    schema_version: 1, request_id: "request:before", attempt_id: "attempt:1", claim_class: "STRUCTURAL_OBSERVATION",
++    engine_id: SENTRDEL_ENGINE_ID, engine_pin: SENTRDEL_PINNED_REVISION, engine_tree: SENTRDEL_PINNED_TREE,
++    engine_version: "0.0.0", source_head: BEFORE, capability_id: "sast-structural", execution_state: "EXECUTED",
++    rule_id: "rule:eval-order", location: { path: "src/app.ts", start_line: 12, end_line: 18 },
++    raw_evidence_ref: "raw:t13", raw_evidence_digest: "a".repeat(64), coverage_state: "PARTIAL",
++    scanned_scope: ["src/app.ts"], unscanned_scope: ["vendor"], unknown_states: ["PARSER_UNSUPPORTED"], limitations: ["t13"],
++    provenance: { state: "COMPLETE", producer_id: "producer:sentrdel", producer_version: "0.0.0",
++      collector_ref: "collector:t13", rule_set_ref: "ruleset:v1" },
++    effect_facts: "E0_READ_ONLY_ANALYSIS", network_facts: "NO_NETWORK", egress_facts: "NO_EGRESS",
++    reproduction_ref: null, ...overrides,
++  } as Parameters<typeof normalizeSentrdelEvidenceV1>[0]);
++}
++
++const retestObservation = (overrides: Record<string, unknown> = {}) =>
++  observation({ source_head: AFTER, request_id: "request:retest", raw_evidence_digest: "b".repeat(64), ...overrides });
++const fix = (overrides: Record<string, unknown> = {}) => ({ schema_version: 1, fix_ref: "pr:42", fix_head: AFTER, ...overrides });
++const run = (overrides: Record<string, unknown> = {}) => ({
++  schema_version: 1, source_head: AFTER, request_id: "request:retest", attempt_id: "attempt:1", capability_id: "sast-structural",
++  execution_state: "EXECUTED", coverage_state: "COMPLETE_WITHIN_STATED_SCOPE", scanned_scope: ["src"], unknown_states: [],
++  evidence_ref: "evidence:retest", evidence_digest: "c".repeat(64), ...overrides,
++});
++
++describe("UA-P06-T13 remediation/retest lifecycle", () => {
++  it("keeps a fix without new evidence open", () => {
++    const result = assessSentrdelRemediationV1(observation(), fix(), null, null);
++    expect(result).toMatchObject({ state: "OPEN_FIX_UNVERIFIED", lifecycle_open: true, retest_supports_fix: false,
++      remediation_verified: false, finding_emitted: false, assurance_effect: "NONE", retest_evidence_ref: null });
++    expect(SENTRDEL_REMEDIATION_STATES).not.toContain("VERIFIED");
++  });
++
++  it("keeps it open when the retest re-observes the same rule at the same path", () => {
++    const again = retestObservation();
++    const result = assessSentrdelRemediationV1(observation(), fix(), run(), [again, retestObservation({ rule_id: "rule:other" })]);
++    expect(result.state).toBe("OPEN_STILL_OBSERVED");
++    expect(result.reobserved_observation_ids).toEqual([again.observation_id]);
++    expect(result.lifecycle_open).toBe(true);
++  });
++
++  it("keeps it open when the retest is incomplete, naming every reason", () => {
++    const cases: Array<[Record<string, unknown>, string]> = [
++      [{ execution_state: "TIMEOUT" }, "RETEST_NOT_EXECUTED"],
++      [{ coverage_state: "PARTIAL" }, "RETEST_COVERAGE_NOT_COMPLETE"],
++      [{ unknown_states: ["PARSER_UNSUPPORTED"] }, "RETEST_REPORTED_UNKNOWN_STATES"],
++      [{ scanned_scope: ["lib", "src/app.tsx", "sr"] }, "ORIGINAL_LOCATION_NOT_IN_RETEST_SCOPE"],
++    ];
++    for (const [change, reason] of cases) {
++      const result = assessSentrdelRemediationV1(observation(), fix(), run(change), []);
++      expect(result.state, reason).toBe("OPEN_RETEST_INCOMPLETE");
++      expect(result.incomplete_reasons, reason).toEqual([reason]);
++      expect(result.retest_supports_fix).toBe(false);
++    }
++    const noRule = observation({ claim_class: "DEPENDENCY_OBSERVATION", capability_id: "dependency-delta", rule_id: null,
++      location: { path: "package-lock.json", start_line: null, end_line: null }, scanned_scope: ["package-lock.json"],
++      unknown_states: ["REACHABILITY_NOT_COMPUTED"] });
++    expect(assessSentrdelRemediationV1(noRule, fix(), run({ capability_id: "dependency-delta", scanned_scope: ["package-lock.json"] }), [])
++      .incomplete_reasons).toEqual(["ORIGINAL_HAS_NO_STABLE_RULE_IDENTITY"]);
++  });
++
++  it("lets only a complete, in-scope, non-reobserving retest support the fix, without verifying it", () => {
++    for (const scope of [["src"], ["src/app.ts"]]) {
++      const result = assessSentrdelRemediationV1(observation(), fix(), run({ scanned_scope: scope }),
++        [retestObservation({ rule_id: "rule:other" }), retestObservation({ location: { path: "src/other.ts", start_line: 1, end_line: 2 },
++          raw_evidence_digest: "d".repeat(64) })]);
++      expect(result).toMatchObject({ state: "RETEST_NOT_REOBSERVED", lifecycle_open: false, retest_supports_fix: true,
++        remediation_verified: false, assurance_effect: "NONE", retest_evidence_ref: "evidence:retest" });
++    }
++  });
++
++  it("is deterministic and bound to the fix and the retest evidence", () => {
++    const first = assessSentrdelRemediationV1(observation(), fix(), run(), []);
++    expect(assessSentrdelRemediationV1(observation(), fix(), run(), [])).toEqual(first);
++    expect(assessSentrdelRemediationV1(observation(), fix(), run({ evidence_digest: "e".repeat(64) }), []).assessment_id)
++      .not.toBe(first.assessment_id);
++    expect(assessSentrdelRemediationV1(observation(), fix({ fix_ref: "pr:43" }), run(), []).assessment_id).not.toBe(first.assessment_id);
++    expect(Object.isFrozen(first) && Object.isFrozen(first.incomplete_reasons)).toBe(true);
++  });
++
++  it("refuses retests that are not bound to the fix, and promoted or malformed input", () => {
++    const refuse = (args: [unknown, unknown, unknown, unknown], name: string) =>
++      expect(() => assessSentrdelRemediationV1(...args), name).toThrow(TypeError);
++    const o = observation();
++    refuse([o, fix({ fix_head: BEFORE }), null, null], "fix at the observed revision");
++    refuse([o, fix(), run({ source_head: "3".repeat(40) }), []], "retest at another head");
++    refuse([o, fix(), run({ capability_id: "secrets-changed" }), []], "retest with another capability");
++    refuse([o, fix(), run(), [observation()]], "retest observation from the old head");
++    refuse([o, fix(), run(), [retestObservation({ attempt_id: "attempt:9" })]], "retest observation from another attempt");
++    const otherCapability = retestObservation({ claim_class: "SECRET_SHAPE_OBSERVATION", capability_id: "secrets-changed",
++      rule_id: "rule:secret-shape", unknown_states: ["TIMEOUT"] });
++    expect(otherCapability, "real T04 secrets observation").toBeTypeOf("object");
++    refuse([o, fix(), run(), [otherCapability]], "retest observation from another capability");
++    refuse([o, fix(), run(), null], "run without observations");
++    refuse([o, fix(), null, []], "observations without run");
++    refuse([o, fix({ verified: true }), null, null], "extra fix key");
++    refuse([o, fix(), run({ status: "PASS" }), []], "extra run key");
++    refuse([o, fix(), run({ coverage_state: "TOTAL" }), []], "invented coverage");
++    refuse([o, fix({ fix_ref: "AKIA" + "Q".repeat(16) }), null, null], "secret fix ref");
++    refuse([{ ...o, remediation_verified: true }, fix(), null, null], "promoted original");
++    refuse([o, fix(), run(), [{ ...retestObservation(), finding_emitted: true }]], "promoted retest observation");
++    let calls = 0;
++    const accessor = { ...o };
++    Object.defineProperty(accessor, "rule_id", { enumerable: true, get: () => { calls += 1; return "rule:eval-order"; } });
++    refuse([accessor, fix(), null, null], "accessor original");
++    expect(calls).toBe(0);
++  });
++});

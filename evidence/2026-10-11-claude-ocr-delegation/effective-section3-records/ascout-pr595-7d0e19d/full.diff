@@ -1,0 +1,369 @@
+diff --git a/src/assurance/security/sentrdel-t09-inventory.ts b/src/assurance/security/sentrdel-t09-inventory.ts
+new file mode 100644
+index 0000000..fe8de99
+--- /dev/null
++++ b/src/assurance/security/sentrdel-t09-inventory.ts
+@@ -0,0 +1,138 @@
++/**
++ * UA-P06-T09, grain C: fail-closed composition of untrusted static observations.
++ *
++ * This is not an engine runtime, security verdict, or evidence of scanner
++ * execution. It prevents cross-source/run evidence mixing.
++ */
++import { createHash } from "node:crypto";
++import { snapshotSentrdelObservationDataV1 } from "./sentrdel-observation-snapshot.js";
++import {
++  buildSentrdelGenericIacGapV1,
++  normalizeSentrdelWorkflowObservationV1,
++  type SentrdelWorkflowObservationV1,
++} from "./sentrdel-workflow-normalization.js";
++import {
++  normalizeSentrdelConfigPresenceV1,
++  type SentrdelConfigPresenceObservationV1,
++} from "./sentrdel-config-presence.js";
++import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++
++export const SENTRDEL_T09_INVENTORY_AUTHORITY = "UA-P06-T09" as const;
++export const SENTRDEL_T09_MAX_OBSERVATIONS = 64 as const;
++
++export interface SentrdelT09InventoryInputV1 {
++  readonly workflows: readonly unknown[];
++  readonly configurations: readonly unknown[];
++}
++
++export interface SentrdelT09InventoryV1 {
++  readonly schema_version: 1;
++  readonly phase_authority: typeof SENTRDEL_T09_INVENTORY_AUTHORITY;
++  readonly inventory_id: string;
++  readonly request_id: string;
++  readonly attempt_id: string;
++  readonly source_head: string;
++  readonly engine_pin: typeof SENTRDEL_PINNED_REVISION;
++  readonly engine_tree: typeof SENTRDEL_PINNED_TREE;
++  readonly workflow_observations: readonly SentrdelWorkflowObservationV1[];
++  readonly config_presence_observations: readonly SentrdelConfigPresenceObservationV1[];
++  readonly generic_iac: ReturnType<typeof buildSentrdelGenericIacGapV1>;
++  readonly authority: "STATIC_OBSERVATION_INVENTORY_ONLY";
++  readonly assurance_effect: "NONE";
++  readonly executed_scanner_proven: false;
++  readonly coverage_proven_complete: false;
++  readonly repository_clean_claimed: false;
++  readonly findings_emitted: false;
++  readonly claim_assessment_emitted: false;
++}
++
++function strictInput(value: unknown): value is SentrdelT09InventoryInputV1 {
++  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
++  const data = value as Record<string, unknown>;
++  return Object.keys(data).length === 2
++    && Object.hasOwn(data, "workflows")
++    && Object.hasOwn(data, "configurations")
++    && Array.isArray(data["workflows"])
++    && Array.isArray(data["configurations"]);
++}
++
++/**
++ * Re-normalize RAW records at the boundary. Do not trust pre-built records,
++ * user-supplied execution states, or purported clean scan result.
++ */
++export function buildSentrdelT09InventoryV1(value: unknown): SentrdelT09InventoryV1 {
++  const stable = snapshotSentrdelObservationDataV1(value);
++  if (!strictInput(stable)) throw new TypeError("T09 inventory requires exact raw input arrays");
++  const { workflows, configurations } = stable;
++  if (workflows.length + configurations.length === 0) {
++    throw new TypeError("T09 inventory needs at least one observation; absence is NOT_RUN");
++  }
++  if (workflows.length + configurations.length > SENTRDEL_T09_MAX_OBSERVATIONS) {
++    throw new TypeError("T09 inventory observation limit exceeded");
++  }
++
++  const normalizedWorkflows = workflows.map(normalizeSentrdelWorkflowObservationV1);
++  const normalizedConfig = configurations.map(normalizeSentrdelConfigPresenceV1);
++  const all = [...normalizedWorkflows, ...normalizedConfig];
++  const [first] = all;
++  if (first === undefined) throw new TypeError("empty T09 inventory");
++  const { source_head, request_id, attempt_id, engine_pin, engine_tree } = first;
++  for (const record of all) {
++    if (record.source_head !== source_head ||
++        record.request_id !== request_id ||
++        record.attempt_id !== attempt_id ||
++        record.engine_pin !== engine_pin ||
++        record.engine_tree !== engine_tree) {
++      throw new TypeError("T09 inventory refuses cross-source, cross-attempt, or cross-pin observations");
++    }
++  }
++  // Records may share one evidence artifact, but never with different digests.
++  const digestByEvidenceRef = new Map<string, string>();
++  for (const { provenance } of all) {
++    const known = digestByEvidenceRef.get(provenance.evidence_ref);
++    if (known !== undefined && known !== provenance.evidence_digest) {
++      throw new TypeError("T09 inventory refuses one evidence reference with conflicting digests");
++    }
++    digestByEvidenceRef.set(provenance.evidence_ref, provenance.evidence_digest);
++  }
++  // UTF-16 code-unit ordering is deterministic across host locales/ICU versions.
++  // Never use localeCompare for identity-bearing or receipt-bearing canonical order.
++  const compareIdentity = (left: string, right: string): number =>
++    left < right ? -1 : left > right ? 1 : 0;
++  const sortedWorkflows = Object.freeze([...normalizedWorkflows].sort((a, b) =>
++    compareIdentity(a.observation_id, b.observation_id)));
++  const sortedConfig = Object.freeze([...normalizedConfig].sort((a, b) =>
++    compareIdentity(a.identity, b.identity)));
++
++  const allIds = [...sortedWorkflows.map(x => x.observation_id),
++    ...sortedConfig.map(x => x.identity)];
++  if (new Set(allIds).size !== allIds.length) {
++    throw new TypeError("T09 inventory rejects repeated evidence records");
++  }
++
++  const fingerprint = createHash("sha256").update(JSON.stringify([
++    SENTRDEL_T09_INVENTORY_AUTHORITY, request_id, attempt_id, source_head,
++    engine_pin, engine_tree, ...allIds,
++  ]), "utf8").digest("hex");
++
++  return Object.freeze({
++    schema_version: 1 as const,
++    phase_authority: SENTRDEL_T09_INVENTORY_AUTHORITY,
++    inventory_id: "t09-inventory:sentrdel:" + fingerprint,
++    request_id,
++    attempt_id,
++    source_head,
++    engine_pin,
++    engine_tree,
++    workflow_observations: sortedWorkflows,
++    config_presence_observations: sortedConfig,
++    generic_iac: buildSentrdelGenericIacGapV1(),
++    authority: "STATIC_OBSERVATION_INVENTORY_ONLY" as const,
++    assurance_effect: "NONE" as const,
++    executed_scanner_proven: false as const,
++    coverage_proven_complete: false as const,
++    repository_clean_claimed: false as const,
++    findings_emitted: false as const,
++    claim_assessment_emitted: false as const,
++  });
++}
+diff --git a/tests/assurance-security-t09c.test.ts b/tests/assurance-security-t09c.test.ts
+new file mode 100644
+index 0000000..fe6ad45
+--- /dev/null
++++ b/tests/assurance-security-t09c.test.ts
+@@ -0,0 +1,219 @@
++import { describe, expect, it } from "vitest";
++import {
++  buildSentrdelT09InventoryV1,
++  SENTRDEL_T09_MAX_OBSERVATIONS,
++} from "../src/assurance/security/sentrdel-t09-inventory.js";
++import { SENTRDEL_ENGINE_ID, SENTRDEL_ENGINE_VERSION } from "../src/assurance/security/sentrdel-engine-boundary.js";
++import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "../src/assurance/security/sentrdel-source-pin.js";
++
++const SHARED = {
++  schema_version: 1,
++  request_id: "request:test",
++  attempt_id: "attempt:test",
++  source_head: "a".repeat(40),
++  engine_id: SENTRDEL_ENGINE_ID,
++  engine_pin: SENTRDEL_PINNED_REVISION,
++  engine_tree: SENTRDEL_PINNED_TREE,
++  engine_version: SENTRDEL_ENGINE_VERSION,
++};
++
++function workflow(extra: Record<string, unknown> = {}) {
++  return {
++    ...SHARED, capability_id: "github-actions", execution_state: "EXECUTED",
++    rule_id: "gha.pull-request-target",
++    workflow_path: ".github/workflows/ci.yml",
++    line: 12,
++    producer_id: "producer:fixture", evidence_ref: "evidence:ci",
++    evidence_digest: "b".repeat(64),
++    coverage_state: "COMPLETE_WITHIN_STATED_SCOPE",
++    unknown_tokens: [],
++    effect_ceiling: "E0_READ_ONLY_ANALYSIS",
++    network_policy: "NO_NETWORK", egress_policy: "NO_EGRESS", ...extra,
++  };
++}
++
++function configuration(extra: Record<string, unknown> = {}) {
++  return {
++    ...SHARED, capability_id: "config-inspection",
++    path: ".mcp.json", signal: "mcp-json",
++    producer_id: "producer:fixture", evidence_ref: "evidence:mcp",
++    evidence_digest: "c".repeat(64), ...extra,
++  };
++}
++
++describe("UA-P06-T09C source/attempt-bound static inventory", () => {
++  it("combines only same-source/same-attempt observations with no assurance promotion", () => {
++    const result = buildSentrdelT09InventoryV1({
++      workflows: [workflow()], configurations: [configuration()],
++    });
++    expect(result.phase_authority).toBe("UA-P06-T09");
++    expect(result.source_head).toBe(SHARED.source_head);
++    expect(result.engine_pin).toBe(SENTRDEL_PINNED_REVISION);
++    expect(result.generic_iac.status).toBe("NOT_RUN");
++    expect(result.generic_iac.clean_claimed).toBe(false);
++    expect(result.workflow_observations).toHaveLength(1);
++    expect(result.config_presence_observations).toHaveLength(1);
++    expect(result.assurance_effect).toBe("NONE");
++    expect(result.authority).toBe("STATIC_OBSERVATION_INVENTORY_ONLY");
++    expect(result.executed_scanner_proven).toBe(false);
++    expect(result.coverage_proven_complete).toBe(false);
++    expect(result.repository_clean_claimed).toBe(false);
++    expect(result.findings_emitted).toBe(false);
++    expect(result.claim_assessment_emitted).toBe(false);
++    expect(Object.isFrozen(result)).toBe(true);
++    expect(Object.isFrozen(result.workflow_observations)).toBe(true);
++    expect(Object.isFrozen(result.config_presence_observations)).toBe(true);
++    expect(JSON.stringify(result)).not.toMatch(/"PASS"|"SUPPORTED"/u);
++  });
++
++  it("sorts observation IDs and produces a stable order-independent inventory", () => {
++    const workflows = [workflow({ line: 45 }), workflow({ line: 12 })];
++    const configurations = [
++      configuration({ path: ".cursor/mcp.json", signal: "cursor-mcp" }),
++      configuration(),
++    ];
++    const a = buildSentrdelT09InventoryV1({ workflows, configurations });
++    const b = buildSentrdelT09InventoryV1({
++      workflows: [...workflows].reverse(), configurations: [...configurations].reverse(),
++    });
++    expect(a).toEqual(b);
++    expect(a.inventory_id).toBe(b.inventory_id);
++    expect(a.workflow_observations[0]?.observation_id).not.toBe(a.workflow_observations[1]?.observation_id);
++    expect(a.config_presence_observations[0]?.identity).not.toBe(a.config_presence_observations[1]?.identity);
++  });
++
++  it("does not depend on localeCompare or host ICU collation for canonical IDs", () => {
++    const values = {
++      workflows: [workflow({ line: 45 }), workflow({ line: 12 })],
++      configurations: [
++        configuration({ path: ".cursor/mcp.json", signal: "cursor-mcp" }),
++        configuration(),
++      ],
++    };
++    const expected = buildSentrdelT09InventoryV1(values);
++    const original = String.prototype.localeCompare;
++    try {
++      String.prototype.localeCompare = () => {
++        throw new Error("locale-specific sorting is forbidden in evidence identity");
++      };
++      const got = buildSentrdelT09InventoryV1({
++        workflows: [...values.workflows].reverse(),
++        configurations: [...values.configurations].reverse(),
++      });
++      expect(got.inventory_id).toBe(expected.inventory_id);
++      expect(got.workflow_observations.map(x => x.observation_id)).toEqual(
++        expected.workflow_observations.map(x => x.observation_id),
++      );
++      expect(got.config_presence_observations.map(x => x.identity)).toEqual(
++        expected.config_presence_observations.map(x => x.identity),
++      );
++    } finally {
++      String.prototype.localeCompare = original;
++    }
++  });
++
++  it("refuses cross-head and cross-attempt pooling for both record types", () => {
++    for (const patch of [
++      { source_head: "d".repeat(40) }, { request_id: "request:other" },
++      { attempt_id: "attempt:other" },
++    ]) {
++      expect(() => buildSentrdelT09InventoryV1({
++        workflows: [workflow()], configurations: [configuration(patch)],
++      })).toThrow(/cross-source/);
++      expect(() => buildSentrdelT09InventoryV1({
++        workflows: [workflow(patch)], configurations: [configuration()],
++      })).toThrow(/cross-source/);
++    }
++  });
++
++  it("refuses duplicate observations rather than inflating coverage", () => {
++    expect(() => buildSentrdelT09InventoryV1({
++      workflows: [workflow(), workflow()], configurations: [],
++    })).toThrow(/repeated evidence/);
++    expect(() => buildSentrdelT09InventoryV1({
++      workflows: [], configurations: [configuration(), configuration()],
++    })).toThrow(/repeated evidence/);
++  });
++
++  it("refuses one evidence reference bound to conflicting digests", () => {
++    const second = { rule_id: "gha.mutable-action-ref", line: 30 };
++    expect(() => buildSentrdelT09InventoryV1({
++      workflows: [workflow(), workflow({ ...second, evidence_digest: "d".repeat(64) })],
++      configurations: [],
++    })).toThrow(/conflicting digests/);
++    expect(() => buildSentrdelT09InventoryV1({
++      workflows: [workflow()],
++      configurations: [configuration({ evidence_ref: "evidence:ci" })],
++    })).toThrow(/conflicting digests/);
++    // Sharing one artifact with the same digest is legitimate.
++    const shared = buildSentrdelT09InventoryV1({
++      workflows: [workflow(), workflow(second)],
++      configurations: [configuration({ evidence_ref: "evidence:ci", evidence_digest: "b".repeat(64) })],
++    });
++    expect(shared.workflow_observations).toHaveLength(2);
++    expect(shared.config_presence_observations).toHaveLength(1);
++  });
++
++  it("refuses unverifiable, malformed, empty, and excessive raw inputs", () => {
++    const invalid: unknown[] = [
++      null, "PASS", [], {}, { workflows: [], configurations: [] },
++      { workflows: [], configurations: [], assessment: "PASS" },
++      { workflows: "fake", configurations: [] },
++      { workflows: [], configurations: 1 },
++      { workflows: [workflow({ rule_id: "gha.fake" })], configurations: [] },
++      { workflows: [], configurations: [configuration({ execution_state: "EXECUTED" })] },
++      { workflows: [], configurations: [configuration({ source_head: "bad" })] },
++      { workflows: [], configurations: [configuration({ path: "../secret" })] },
++      { workflows: Array(SENTRDEL_T09_MAX_OBSERVATIONS + 1).fill(workflow()),
++        configurations: [] },
++    ];
++    for (const value of invalid) {
++      expect(() => buildSentrdelT09InventoryV1(value)).toThrow(TypeError);
++    }
++  });
++
++  it("refuses accessor, hidden, symbol, and sparse input mutations", () => {
++    let observed = 0;
++    const getterRecord = { ...workflow() };
++    Object.defineProperty(getterRecord, "workflow_path", {
++      enumerable: true,
++      get() {
++        observed += 1;
++        return observed < 4 ? ".github/workflows/ci.yml" : "../unsafe.yml";
++      },
++    });
++    const hiddenRecord = { ...configuration() };
++    Object.defineProperty(hiddenRecord, "verdict", { value: "PASS", enumerable: false });
++    const symbolRecord = { ...configuration(), [Symbol("bypass")]: "PASS" };
++    const sparseRecords = Array(1);
++    const nestedAccessor = { ...workflow() };
++    const unknownTokens: string[] = ["TIMEOUT"];
++    Object.defineProperty(unknownTokens, "0", {
++      enumerable: true, get: () => "TIMEOUT",
++    });
++    nestedAccessor.unknown_tokens = unknownTokens;
++    for (const input of [
++      { workflows: [getterRecord], configurations: [] },
++      { workflows: [], configurations: [hiddenRecord] },
++      { workflows: [], configurations: [symbolRecord] },
++      { workflows: sparseRecords, configurations: [] },
++      { workflows: [nestedAccessor], configurations: [] },
++    ]) {
++      expect(() => buildSentrdelT09InventoryV1(input)).toThrow(TypeError);
++    }
++    expect(observed).toBe(0);
++  });
++
++  it("accepts a single characterized surface without inferring the absent one was checked", () => {
++    const a = buildSentrdelT09InventoryV1({ workflows: [workflow()], configurations: [] });
++    const b = buildSentrdelT09InventoryV1({ workflows: [], configurations: [configuration()] });
++    expect(a.workflow_observations).toHaveLength(1);
++    expect(a.config_presence_observations).toHaveLength(0);
++    expect(b.workflow_observations).toHaveLength(0);
++    expect(b.config_presence_observations).toHaveLength(1);
++    expect(a.coverage_proven_complete).toBe(false);
++    expect(b.coverage_proven_complete).toBe(false);
++    expect(a.generic_iac.status).toBe("NOT_RUN");
++    expect(b.generic_iac.status).toBe("NOT_RUN");
++  });
++});
