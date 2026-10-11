@@ -1,0 +1,5 @@
+rule:eval-order kind=review level=none uri=src/app.ts region={"startLine":12,"endLine":18} truth=false
+ascout.unresolved-rule.DEPENDENCY_OBSERVATION kind=review level=none uri=package-lock.json region=null truth=false
+run properties {"ascout_phase_authority":"UA-P06-T11","ascout_source_head":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","ascout_request_id":"request:e2e","ascout_attempt_id":"attempt:1","ascout_engine_pin":"f5747319a50831ef7cee983d253c0ca5503c9a64","ascout_engine_tree":"0d70de477fa403a416a8cff5576498e4c59a1689","ascout_sarif_is_canonical_truth":false,"ascout_coverage_total":false,"ascout_empty_export_is_clean":false,"ascout_assurance_effect":"NONE"}
+re-imported 2 classes INFERENCE truth false
+promoted record refused: true
