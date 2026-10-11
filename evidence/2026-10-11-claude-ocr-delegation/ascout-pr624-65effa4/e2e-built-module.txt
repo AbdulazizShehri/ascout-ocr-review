@@ -1,0 +1,5 @@
+1. fix merged, no retest           OPEN_FIX_UNVERIFIED      open=true supports=false verified=false reasons=-
+2. retest still finds it           OPEN_STILL_OBSERVED      open=true supports=false verified=false reasons=-
+3. retest timed out                OPEN_RETEST_INCOMPLETE   open=true supports=false verified=false reasons=RETEST_NOT_EXECUTED|RETEST_COVERAGE_NOT_COMPLETE
+4. retest scanned only lib/        OPEN_RETEST_INCOMPLETE   open=true supports=false verified=false reasons=ORIGINAL_LOCATION_NOT_IN_RETEST_SCOPE
+5. complete retest, not re-found   RETEST_NOT_REOBSERVED    open=false supports=true verified=false reasons=-
