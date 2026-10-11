@@ -1,0 +1,5 @@
+LINKED_NOT_EXECUTED ref=repro:e2e method=deterministic-rescan executed=false reproduced=false exploit_proven=false
+DECLARED_NOT_SUPPLIED ref=repro:e2e method=null executed=false reproduced=false exploit_proven=false
+NONE_DECLARED ref=null method=null executed=false reproduced=false exploit_proven=false
+foreign digest refused
+other head refused
