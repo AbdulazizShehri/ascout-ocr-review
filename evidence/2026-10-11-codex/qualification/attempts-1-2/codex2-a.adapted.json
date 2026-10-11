@@ -1,0 +1,46 @@
+{
+  "adapter": "codex-delegation-v1: Codex output wrapped for harness/score.py; NOT an OCR run manifest",
+  "status": "complete",
+  "manifest": {
+    "terminal_state": "complete",
+    "coverage": {
+      "selected": [
+        "src/receipt-store.ts"
+      ],
+      "completed": [
+        "src/receipt-store.ts"
+      ],
+      "failed": []
+    }
+  },
+  "summary": {
+    "budget_exceeded": false
+  },
+  "warnings": [],
+  "comments": [
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 11,
+      "end_line": 11,
+      "category": "security",
+      "severity": "high",
+      "content": "The string-prefix check permits paths outside the store when a sibling directory shares its prefix. For example, root '/data/receipts' and name '../receipts-private/secret' pass this check. Validate containment using a relative path and directory boundaries."
+    },
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 20,
+      "end_line": 21,
+      "category": "bug",
+      "severity": "high",
+      "content": "The inclusive loop returns count + 1 records: count=0 returns one entry and count=64 returns 65, violating MAX_RECORDS. It also pushes undefined when records is shorter than the requested count. Bound iteration by records.length and use an exclusive upper limit."
+    },
+    {
+      "path": "src/receipt-store.ts",
+      "start_line": 28,
+      "end_line": 28,
+      "category": "security",
+      "severity": "high",
+      "content": "execSync interprets this interpolated string through a shell. Shell metacharacters in root or sha can execute arbitrary commands, and spaces in root break valid paths. Use execFileSync with separate arguments and validate sha as an allowed Git object identifier."
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+# Files (0 reviewable / 1 total)
+
+- mode: range
+- from: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- to: a77d51e99796607e18784b82d87185874a4333ec
+- merge_base: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- total_insertions: 13
+- total_deletions: 1
+
+~~- `THIRD_PARTY_NOTICES.md` [modified] +13/-1 (excluded: unsupported_ext)~~

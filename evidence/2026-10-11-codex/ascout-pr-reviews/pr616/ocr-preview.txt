@@ -1,0 +1,13 @@
+# Files (1 reviewable / 4 total)
+
+- mode: range
+- from: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- to: baeff552a47eab43e80580b558928179027793e2
+- merge_base: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- total_insertions: 70
+- total_deletions: 70
+
+~~- `THIRD_PARTY_NOTICES.md` [modified] +8/-8 (excluded: unsupported_ext)~~
+~~- `package-lock.json` [modified] +58/-58 (excluded: default_path)~~
+  - `package.json` [modified] +2/-2
+~~- `tests/vitest-check.integration.test.ts` [modified] +2/-2 (excluded: default_path)~~

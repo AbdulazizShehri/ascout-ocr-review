@@ -1,0 +1,16 @@
+# Files (0 reviewable / 7 total)
+
+- mode: range
+- from: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- to: 689c0b5ce0920e18d22be21f877d8767c0db1148
+- merge_base: ca6b6f514e5a8881e2cfa2789b5e5ea43e3aaaad
+- total_insertions: 7
+- total_deletions: 7
+
+~~- `tests/cli.smoke.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/drift.contract.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/git-diff.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/git-tree-digest-bom.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/git-tree-digest.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/pr41-p0-regressions.contract.test.ts` [modified] +1/-1 (excluded: default_path)~~
+~~- `tests/t081-cross-platform-receipt-golden.test.ts` [modified] +1/-1 (excluded: default_path)~~

@@ -1,0 +1,91 @@
+diff --git a/tests/cli.smoke.test.ts b/tests/cli.smoke.test.ts
+index 3c99391..e75c11b 100644
+--- a/tests/cli.smoke.test.ts
++++ b/tests/cli.smoke.test.ts
+@@ -18,7 +18,7 @@ const ENV_KEYS = [
+ const originalCwd = process.cwd();
+ const originalEnv = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/drift.contract.test.ts b/tests/drift.contract.test.ts
+index c4fed79..2dc1d11 100644
+--- a/tests/drift.contract.test.ts
++++ b/tests/drift.contract.test.ts
+@@ -10,7 +10,7 @@ import { buildReceipt } from "../src/receipt/build.js";
+ import { validateReceiptSemantics, type SourceStateV1 } from "../src/receipt/model.js";
+ 
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_TEST_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/git-diff.test.ts b/tests/git-diff.test.ts
+index a9810be..61fc5f6 100644
+--- a/tests/git-diff.test.ts
++++ b/tests/git-diff.test.ts
+@@ -17,7 +17,7 @@ import {
+ } from "../src/git.js";
+ 
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/git-tree-digest-bom.test.ts b/tests/git-tree-digest-bom.test.ts
+index cec7377..0b2a300 100644
+--- a/tests/git-tree-digest-bom.test.ts
++++ b/tests/git-tree-digest-bom.test.ts
+@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
+ import { readTreeDigestV1 } from "../src/git.js";
+ 
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/git-tree-digest.test.ts b/tests/git-tree-digest.test.ts
+index a3d7b48..97b4867 100644
+--- a/tests/git-tree-digest.test.ts
++++ b/tests/git-tree-digest.test.ts
+@@ -28,7 +28,7 @@ const BASE_INDEX = [
+   { path: "tests/__snapshots__/ui.snap", mode: "100644", oid: "2".repeat(40), stage: 0 },
+ ] as const;
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_TEST_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/pr41-p0-regressions.contract.test.ts b/tests/pr41-p0-regressions.contract.test.ts
+index 93b27c1..497af17 100644
+--- a/tests/pr41-p0-regressions.contract.test.ts
++++ b/tests/pr41-p0-regressions.contract.test.ts
+@@ -17,7 +17,7 @@ const originalEnv = new Map([
+   ["ASCOUT_PR41_SECRET", process.env.ASCOUT_PR41_SECRET],
+   ["GITHUB_TOKEN", process.env.GITHUB_TOKEN],
+ ] as const);
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,
+diff --git a/tests/t081-cross-platform-receipt-golden.test.ts b/tests/t081-cross-platform-receipt-golden.test.ts
+index 7d07b37..fd6d0c3 100644
+--- a/tests/t081-cross-platform-receipt-golden.test.ts
++++ b/tests/t081-cross-platform-receipt-golden.test.ts
+@@ -8,7 +8,7 @@ import { readGitHeadState, readWorkingTreeComparison } from "../src/git.js";
+ import { validateReceiptSemantics, type ReceiptV1 } from "../src/receipt/model.js";
+ 
+ const temporaryDirectories: string[] = [];
+-const NULL_GIT_CONFIG = process.platform === "win32" ? "NUL" : "/dev/null";
++const NULL_GIT_CONFIG = "/dev/null"; // Git for Windows accepts /dev/null; newer releases reject NUL.
+ const GIT_ENV = {
+   ...process.env,
+   GIT_CONFIG_GLOBAL: NULL_GIT_CONFIG,

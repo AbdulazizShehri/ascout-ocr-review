@@ -1,0 +1,11 @@
+# Files (1 reviewable / 2 total)
+
+- mode: range
+- from: 3758ef323601b202d2019129b1cc104138a453be
+- to: 6f16c76ce3aade747a1ed7afa7e14700e2d2b872
+- merge_base: 3758ef323601b202d2019129b1cc104138a453be
+- total_insertions: 26
+- total_deletions: 2
+
+  - `src/assurance/security/sentrdel-observation-snapshot.ts` [modified] +7/-2
+~~- `tests/assurance-security-t09c.test.ts` [modified] +19/-0 (excluded: default_path)~~
