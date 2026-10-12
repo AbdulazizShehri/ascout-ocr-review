@@ -1,0 +1,18 @@
+# Files (2 reviewable / 9 total)
+
+- mode: range
+- from: d1184eabd7c94cf5e8c941647a842a44e94edc90
+- to: c9d85ef8469fa43a4e608f9bd0179bfa3d83efbd
+- merge_base: d1184eabd7c94cf5e8c941647a842a44e94edc90
+- total_insertions: 234
+- total_deletions: 10
+
+~~- `README.md` [modified] +2/-1 (excluded: unsupported_ext)~~
+  - `src/assurance/security/security-command.ts` [added] +74/-0
+  - `src/cli.ts` [modified] +37/-5
+~~- `tests/assurance-check-compatibility.test.ts` [modified] +1/-0 (excluded: default_path)~~
+~~- `tests/assurance-phase-qualification.test.ts` [modified] +2/-1 (excluded: default_path)~~
+~~- `tests/assurance-phase-recovery-qualification.test.ts` [modified] +2/-1 (excluded: default_path)~~
+~~- `tests/assurance-review-p03-t15.test.ts` [modified] +2/-1 (excluded: default_path)~~
+~~- `tests/assurance-security-t14.test.ts` [added] +114/-0 (excluded: default_path)~~
+~~- `tests/assurance-test-cli-test-plan.test.ts` [modified] +0/-1 (excluded: default_path)~~

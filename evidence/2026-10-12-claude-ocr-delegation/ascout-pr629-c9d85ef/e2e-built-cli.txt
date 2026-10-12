@@ -1,0 +1,10 @@
+ascout review --format json: exit main=0 t14=0 stdout=same stderr=same
+ascout review --format terminal: exit main=0 t14=0 stdout=same stderr=same
+ascout test --format json: exit main=0 t14=0 stdout=same stderr=same
+ascout test --profile deep --format terminal: exit main=0 t14=0 stdout=same stderr=same
+ascout doctor --format json: exit main=2 t14=2 stdout=same stderr=DIFF
+ascout cyber: exit main=2 t14=2 stdout=same stderr=DIFF
+ascout security --format agent: exit main=2 t14=2 stdout=same stderr=DIFF
+ascout security --format json: exit=1 outcome=NOT_RUN False False
+ascout security (terminal): exit=1 first line: === Ascout Security (NOT_RUN) ===
+fixture tree unchanged by security: yes

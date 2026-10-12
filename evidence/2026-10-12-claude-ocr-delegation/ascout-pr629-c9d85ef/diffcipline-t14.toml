@@ -1,0 +1,11 @@
+version = 1
+
+[policy]
+max_changed_files = 12
+max_added_lines = 400
+dependency_manifest_changes = "fail"
+lockfile_changes = "fail"
+untracked_files = "review"
+
+[verification]
+commands = ["npm run typecheck", "npx vitest run tests/assurance-security-t14.test.ts tests/assurance-check-compatibility.test.ts tests/assurance-test-cli-test-plan.test.ts tests/assurance-phase-qualification.test.ts tests/assurance-phase-recovery-qualification.test.ts tests/assurance-review-p03-t15.test.ts tests/cli-format.contract.test.ts"]

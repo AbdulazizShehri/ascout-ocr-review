@@ -1,0 +1,420 @@
+diff --git a/README.md b/README.md
+index 9d7842e..4057fb4 100644
+--- a/README.md
++++ b/README.md
+@@ -95,9 +95,10 @@ ascout doctor
+ ascout check [--allow-changed-command-surface] [--format json|agent]
+ ascout review [--format json|terminal]
+ ascout test [--profile quick|standard|deep|release] [--format json|terminal]
++ascout security [--format json|terminal]
+ ```
+ 
+-**Current command semantics (v0.1.0):** `ascout check` executes supported local verification tasks and produces an evidence receipt. `ascout review` presently reports review scope or unavailable review execution; it does **not** run a code-review engine. `ascout test` presently creates a test plan; it does **not** execute that plan. Both `review` and `test` can currently exit with code 0 even though no review or advanced test execution took place. That exit status is **not an assurance PASS**. A change to those command exit semantics is proposed separately and requires the appropriate compatibility/governance approval.
++**Current command semantics (v0.1.0):** `ascout check` executes supported local verification tasks and produces an evidence receipt. `ascout review` presently reports review scope or unavailable review execution; it does **not** run a code-review engine. `ascout test` presently creates a test plan; it does **not** execute that plan. Both `review` and `test` can currently exit with code 0 even though no review or advanced test execution took place. That exit status is **not an assurance PASS**. A change to those command exit semantics is proposed separately and requires the appropriate compatibility/governance approval. `ascout security` is local and read-only: no security engine is executed yet, so it always reports `NOT_RUN` and exits with code 1; it never reports a security pass or a clean result.
+ 
+ When running directly from a source checkout rather than an installed release asset, substitute `node /path/to/Ascout/dist/cli.js` for `ascout` in the examples below.
+ 
+diff --git a/src/assurance/security/security-command.ts b/src/assurance/security/security-command.ts
+new file mode 100644
+index 0000000..51d8665
+--- /dev/null
++++ b/src/assurance/security/security-command.ts
+@@ -0,0 +1,74 @@
++/**
++ * UA-P06-T14 — `ascout security`.
++ *
++ * Local, read-only, zero-cost. UA-P06 executes no Sentrdel binary, so the
++ * command has no engine to run: it reports NOT_RUN with the reason, the pinned
++ * engine identity, and the characterized capability scope, and the caller
++ * exits 1 (founder decision A, effective UA-P06-T14 CLI surface amendment).
++ * It reads no repository files, starts no process, opens no network
++ * connection, and writes nothing except its report to stdout/stderr.
++ */
++import { buildSentrdelCapabilitiesV1 } from "./sentrdel-capability-characterization.js";
++import { SENTRDEL_ENGINE_ID, SENTRDEL_ENGINE_VERSION } from "./sentrdel-engine-boundary.js";
++import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++
++export const SECURITY_COMMAND_NOT_RUN_EXIT_CODE = 1 as const;
++export const SECURITY_NOT_RUN_REASON = "ENGINE_NOT_EXECUTED_IN_UA_P06" as const;
++
++export interface SecurityCommandReportV1 {
++  readonly schema_version: 1;
++  readonly kind: "security";
++  readonly outcome: "NOT_RUN";
++  readonly reason_code: typeof SECURITY_NOT_RUN_REASON;
++  readonly reason_text: string;
++  readonly engine: Readonly<{ id: string; version: string; pin: string; tree: string; executed: false }>;
++  readonly capabilities: readonly Readonly<{ id: string; status: string; run: false }>[];
++  readonly scanned_scope: readonly string[];
++  readonly security_pass: false;
++  readonly clean_claimed: false;
++  readonly findings_emitted: false;
++  readonly assurance_effect: "NONE";
++  readonly network: "NONE";
++  readonly writes: "NONE";
++  readonly exit_code: typeof SECURITY_COMMAND_NOT_RUN_EXIT_CODE;
++}
++
++export function buildSecurityCommandReportV1(): SecurityCommandReportV1 {
++  const capabilities = buildSentrdelCapabilitiesV1()
++    .map(capability => Object.freeze({ id: capability.id, status: capability.status, run: false as const }));
++  return Object.freeze({
++    schema_version: 1,
++    kind: "security",
++    outcome: "NOT_RUN",
++    reason_code: SECURITY_NOT_RUN_REASON,
++    reason_text: "No security engine is executed in UA-P06; nothing was scanned, so no security result exists.",
++    engine: Object.freeze({
++      id: SENTRDEL_ENGINE_ID, version: SENTRDEL_ENGINE_VERSION,
++      pin: SENTRDEL_PINNED_REVISION, tree: SENTRDEL_PINNED_TREE, executed: false,
++    }),
++    capabilities: Object.freeze(capabilities),
++    scanned_scope: Object.freeze([]),
++    security_pass: false,
++    clean_claimed: false,
++    findings_emitted: false,
++    assurance_effect: "NONE",
++    network: "NONE",
++    writes: "NONE",
++    exit_code: SECURITY_COMMAND_NOT_RUN_EXIT_CODE,
++  });
++}
++
++export function renderSecurityJsonV1(report: SecurityCommandReportV1): string {
++  return `${JSON.stringify(report, null, 2)}\n`;
++}
++
++export function renderSecurityTerminalV1(report: SecurityCommandReportV1): string {
++  return [
++    "=== Ascout Security (NOT_RUN) ===",
++    `outcome: ${report.outcome} (${report.reason_code})`,
++    report.reason_text,
++    `engine: ${report.engine.id} ${report.engine.version} @ ${report.engine.pin.slice(0, 12)} (not executed)`,
++    `capabilities characterized: ${report.capabilities.length}; run: 0`,
++    "This is not a security pass and not a clean result.",
++  ].join("\n");
++}
+diff --git a/src/cli.ts b/src/cli.ts
+index f6684ab..521e980 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -23,15 +23,21 @@ import {
+   renderTestPlanTerminalV1,
+   TEST_PLAN_DEFAULT_PROFILE,
+ } from "./assurance/test/test-plan-command.js";
++import {
++  buildSecurityCommandReportV1,
++  renderSecurityJsonV1,
++  renderSecurityTerminalV1,
++} from "./assurance/security/security-command.js";
+ import type { TestProfile } from "./assurance/test/profile-policy.js";
+ 
+-const COMMANDS = ["init", "doctor", "check", "review", "test"] as const;
++const COMMANDS = ["init", "doctor", "check", "review", "test", "security"] as const;
+ const ALLOW_CHANGED_COMMAND_SURFACE = "--allow-changed-command-surface";
+ const FORMAT_FLAG = "--format";
+ const PROFILE_FLAG = "--profile";
+ const CHECK_FORMATS = ["json", "agent"] as const;
+ const REVIEW_FORMATS = ["json", "terminal"] as const;
+ const TEST_FORMATS = ["json", "terminal"] as const;
++const SECURITY_FORMATS = ["json", "terminal"] as const;
+ const TEST_PROFILE_TOKENS = ["quick", "standard", "deep", "release"] as const;
+ const REVIEW_WRITE_FLAGS = ["--publish", "--write", "--output", "--push"] as const;
+ 
+@@ -39,6 +45,7 @@ export type CliCommand = (typeof COMMANDS)[number];
+ export type CheckFormat = (typeof CHECK_FORMATS)[number];
+ export type ReviewFormat = (typeof REVIEW_FORMATS)[number];
+ export type TestFormat = (typeof TEST_FORMATS)[number];
++export type SecurityFormat = (typeof SECURITY_FORMATS)[number];
+ export type TestProfileToken = (typeof TEST_PROFILE_TOKENS)[number];
+ 
+ type EntryDisposition = "direct" | "not_direct" | "resolution_error";
+@@ -46,7 +53,7 @@ type EntryDisposition = "direct" | "not_direct" | "resolution_error";
+ export interface CliInvocation {
+   command: CliCommand;
+   allowChangedCommandSurface: boolean;
+-  format?: CheckFormat | ReviewFormat | TestFormat;
++  format?: CheckFormat | ReviewFormat | TestFormat | SecurityFormat;
+   profile?: TestProfile;
+ }
+ 
+@@ -75,6 +82,10 @@ function isTestFormat(value: string): value is TestFormat {
+   return TEST_FORMATS.includes(value as TestFormat);
+ }
+ 
++function isSecurityFormat(value: string): value is SecurityFormat {
++  return SECURITY_FORMATS.includes(value as SecurityFormat);
++}
++
+ function isTestProfileToken(value: string): value is TestProfileToken {
+   return TEST_PROFILE_TOKENS.includes(value as TestProfileToken);
+ }
+@@ -104,7 +115,7 @@ export function parseCliArgs(argv: readonly string[]): CliInvocation {
+   }
+ 
+   let allowChangedCommandSurface = false;
+-  let format: CheckFormat | ReviewFormat | TestFormat | undefined;
++  let format: CheckFormat | ReviewFormat | TestFormat | SecurityFormat | undefined;
+   let profile: TestProfile | undefined;
+ 
+   for (let index = 0; index < rest.length; index += 1) {
+@@ -132,8 +143,8 @@ export function parseCliArgs(argv: readonly string[]): CliInvocation {
+     }
+ 
+     if (token === FORMAT_FLAG) {
+-      if (commandToken !== "check" && commandToken !== "review" && commandToken !== "test") {
+-        throw new CliUsageError(`${FORMAT_FLAG} is valid only with the check, review, or test command.`);
++      if (commandToken !== "check" && commandToken !== "review" && commandToken !== "test" && commandToken !== "security") {
++        throw new CliUsageError(`${FORMAT_FLAG} is valid only with the check, review, test, or security command.`);
+       }
+       if (format !== undefined) {
+         throw new CliUsageError(`${FORMAT_FLAG} may be supplied only once.`);
+@@ -155,6 +166,16 @@ export function parseCliArgs(argv: readonly string[]): CliInvocation {
+       if (value === undefined) {
+         throw new CliUsageError(`${FORMAT_FLAG} requires one of: ${REVIEW_FORMATS.join("|")}.`);
+       }
++      if (commandToken === "security") {
++        if (!isSecurityFormat(value)) {
++          throw new CliUsageError(
++            `Unsupported security format: ${value}. Expected one of: ${SECURITY_FORMATS.join("|")}.`,
++          );
++        }
++        format = value;
++        index += 1;
++        continue;
++      }
+       if (commandToken === "test") {
+         if (!isTestFormat(value)) {
+           throw new CliUsageError(
+@@ -215,6 +236,7 @@ export function usageText(): string {
+     `  ascout check [${ALLOW_CHANGED_COMMAND_SURFACE}] [${FORMAT_FLAG} json|agent]`,
+     `  ascout review [${FORMAT_FLAG} json|terminal]`,
+     `  ascout test [${PROFILE_FLAG} quick|standard|deep|release] [${FORMAT_FLAG} json|terminal]`,
++    `  ascout security [${FORMAT_FLAG} json|terminal]`,
+   ].join("\n");
+ }
+ 
+@@ -362,6 +384,16 @@ export async function runCli(argv: readonly string[]): Promise<number> {
+       const testFormat = invocation.format as TestFormat | undefined;
+       return runTestPlan(invocation.profile ?? TEST_PLAN_DEFAULT_PROFILE, testFormat);
+     }
++    if (invocation.command === "security") {
++      // Local and read-only: no repository read, process, network, or file write.
++      const report = buildSecurityCommandReportV1();
++      if (invocation.format === "json") {
++        process.stdout.write(renderSecurityJsonV1(report));
++      } else {
++        console.error(renderSecurityTerminalV1(report));
++      }
++      return report.exit_code;
++    }
+     console.error(`ascout ${invocation.command}: not implemented.`);
+     return 2;
+   } catch (error: unknown) {
+diff --git a/tests/assurance-check-compatibility.test.ts b/tests/assurance-check-compatibility.test.ts
+index ba1ceb8..c8b5214 100644
+--- a/tests/assurance-check-compatibility.test.ts
++++ b/tests/assurance-check-compatibility.test.ts
+@@ -63,6 +63,7 @@ const EXPECTED_USAGE = [
+   "  ascout check [--allow-changed-command-surface] [--format json|agent]",
+   "  ascout review [--format json|terminal]",
+   "  ascout test [--profile quick|standard|deep|release] [--format json|terminal]",
++  "  ascout security [--format json|terminal]",
+ ].join("\n");
+ 
+ afterEach(() => {
+diff --git a/tests/assurance-phase-qualification.test.ts b/tests/assurance-phase-qualification.test.ts
+index 254c2ab..e630594 100644
+--- a/tests/assurance-phase-qualification.test.ts
++++ b/tests/assurance-phase-qualification.test.ts
+@@ -41,6 +41,7 @@ const EXPECTED_USAGE = [
+   "  ascout check [--allow-changed-command-surface] [--format json|agent]",
+   "  ascout review [--format json|terminal]",
+   "  ascout test [--profile quick|standard|deep|release] [--format json|terminal]",
++  "  ascout security [--format json|terminal]",
+ ].join("\n");
+ 
+ describe("UA-P01-T18 exact-head phase qualification sentinel", () => {
+@@ -100,7 +101,7 @@ describe("UA-P01-T18 exact-head phase qualification sentinel", () => {
+       allowChangedCommandSurface: false,
+     });
+ 
+-    for (const command of ["security", "cyber", "assure"]) {
++    for (const command of ["cyber", "assure"]) {
+       expect(() => parseCliArgs([command])).toThrow(CliUsageError);
+     }
+   });
+diff --git a/tests/assurance-phase-recovery-qualification.test.ts b/tests/assurance-phase-recovery-qualification.test.ts
+index 8d77b8c..3ec1fd2 100644
+--- a/tests/assurance-phase-recovery-qualification.test.ts
++++ b/tests/assurance-phase-recovery-qualification.test.ts
+@@ -40,6 +40,7 @@ const EXPECTED_USAGE = [
+   "  ascout check [--allow-changed-command-surface] [--format json|agent]",
+   "  ascout review [--format json|terminal]",
+   "  ascout test [--profile quick|standard|deep|release] [--format json|terminal]",
++  "  ascout security [--format json|terminal]",
+ ].join("\n");
+ 
+ describe("UA-P01-T18-R2 recovery phase closeout sentinel", () => {
+@@ -94,7 +95,7 @@ describe("UA-P01-T18-R2 recovery phase closeout sentinel", () => {
+       allowChangedCommandSurface: false,
+     });
+ 
+-    for (const command of ["security", "cyber", "assure"]) {
++    for (const command of ["cyber", "assure"]) {
+       expect(() => parseCliArgs([command])).toThrow(CliUsageError);
+     }
+   });
+diff --git a/tests/assurance-review-p03-t15.test.ts b/tests/assurance-review-p03-t15.test.ts
+index 4ba82ca..08edc77 100644
+--- a/tests/assurance-review-p03-t15.test.ts
++++ b/tests/assurance-review-p03-t15.test.ts
+@@ -257,6 +257,7 @@ describe("UA-P03-T15 exact-head phase qualification sentinel", () => {
+         "  ascout check [--allow-changed-command-surface] [--format json|agent]",
+         "  ascout review [--format json|terminal]",
+         "  ascout test [--profile quick|standard|deep|release] [--format json|terminal]",
++        "  ascout security [--format json|terminal]",
+       ].join("\n"),
+     );
+     expect(parseCliArgs(["review"])).toEqual({
+@@ -267,7 +268,7 @@ describe("UA-P03-T15 exact-head phase qualification sentinel", () => {
+       command: "test",
+       allowChangedCommandSurface: false,
+     });
+-    for (const command of ["security", "cyber", "assure"]) {
++    for (const command of ["cyber", "assure"]) {
+       expect(() => parseCliArgs([command])).toThrow(CliUsageError);
+     }
+     expect(REVIEW_REPORT_KINDS).toEqual(["review", "absence", "empty"]);
+diff --git a/tests/assurance-security-t14.test.ts b/tests/assurance-security-t14.test.ts
+new file mode 100644
+index 0000000..b348988
+--- /dev/null
++++ b/tests/assurance-security-t14.test.ts
+@@ -0,0 +1,114 @@
++import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { CliUsageError, parseCliArgs, runCli, usageText } from "../src/cli.js";
++import {
++  SECURITY_COMMAND_NOT_RUN_EXIT_CODE,
++  buildSecurityCommandReportV1,
++} from "../src/assurance/security/security-command.js";
++import { buildSentrdelCapabilitiesV1 } from "../src/assurance/security/sentrdel-capability-characterization.js";
++
++afterEach(() => {
++  vi.restoreAllMocks();
++});
++
++function capture() {
++  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
++  const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
++  return {
++    stdout: () => stdout.mock.calls.map(call => String(call[0])).join(""),
++    stderr: () => stderr.mock.calls.flat().map(String).join("\n"),
++  };
++}
++
++describe("UA-P06-T14 ascout security (effective amendment #625, decisions A and B)", () => {
++  it("parses exactly security with optional --format json|terminal", () => {
++    expect(parseCliArgs(["security"])).toEqual({ command: "security", allowChangedCommandSurface: false });
++    expect(parseCliArgs(["security", "--format", "json"])).toEqual({
++      command: "security", allowChangedCommandSurface: false, format: "json",
++    });
++    expect(parseCliArgs(["security", "--format", "terminal"]).format).toBe("terminal");
++  });
++
++  it("refuses every other option, value, and repetition (decision B)", () => {
++    for (const argv of [
++      ["security", "--format"], ["security", "--format", "agent"], ["security", "--format", "sarif"],
++      ["security", "--format", "json", "--format", "json"], ["security", "--profile", "quick"],
++      ["security", "--allow-changed-command-surface"], ["security", "--publish"], ["security", "--write"],
++      ["security", "src/app.ts"], ["security", "--input", "result.sarif"],
++    ]) {
++      expect(() => parseCliArgs(argv), argv.join(" ")).toThrow(CliUsageError);
++    }
++  });
++
++  it("keeps other unimplemented verbs refused and documents exactly one new usage line", () => {
++    for (const command of ["cyber", "assure", "secure", "scan"]) {
++      expect(() => parseCliArgs([command]), command).toThrow(CliUsageError);
++    }
++    const lines = usageText().split("\n");
++    expect(lines.filter(line => line.includes("ascout security"))).toEqual(["  ascout security [--format json|terminal]"]);
++    expect(lines.at(-1)).toBe("  ascout security [--format json|terminal]");
++  });
++
++  it("reports NOT_RUN on stderr and exits 1, never a pass (decision A)", async () => {
++    const io = capture();
++    expect(await runCli(["security"])).toBe(1);
++    expect(io.stdout()).toBe("");
++    const text = io.stderr();
++    expect(text).toContain("=== Ascout Security (NOT_RUN) ===");
++    expect(text).toContain("ENGINE_NOT_EXECUTED_IN_UA_P06");
++    expect(text).toContain("This is not a security pass and not a clean result.");
++    expect(text).not.toMatch(/\bPASS(ED)?\b|\bCLEAN\b|\bSECURE\b/u);
++  });
++
++  it("emits the JSON report on stdout and exits 1", async () => {
++    const io = capture();
++    expect(await runCli(["security", "--format", "json"])).toBe(1);
++    const report = JSON.parse(io.stdout());
++    expect(report).toEqual(JSON.parse(JSON.stringify(buildSecurityCommandReportV1())));
++    expect(report).toMatchObject({
++      kind: "security", outcome: "NOT_RUN", security_pass: false, clean_claimed: false, findings_emitted: false,
++      assurance_effect: "NONE", network: "NONE", writes: "NONE", exit_code: 1, scanned_scope: [],
++      engine: { executed: false },
++    });
++    expect(report.capabilities).toHaveLength(buildSentrdelCapabilitiesV1().length);
++    expect(report.capabilities.every((c: { run: boolean }) => c.run === false)).toBe(true);
++    expect(SECURITY_COMMAND_NOT_RUN_EXIT_CODE).toBe(1);
++  });
++
++  it("is deterministic, local, and read-only", async () => {
++    expect(buildSecurityCommandReportV1()).toEqual(buildSecurityCommandReportV1());
++    const source = readFileSync(join(__dirname, "../src/assurance/security/security-command.ts"), "utf8");
++    expect(source).not.toMatch(/from "node:(fs|net|http|https|child_process|dgram|tls|worker_threads)"/u);
++    expect(source).not.toMatch(/\bfetch\(|process\.cwd\(|Date\.now\(|Math\.random\(/u);
++    const fetchSpy = vi.spyOn(globalThis, "fetch");
++    const dir = mkdtempSync(join(tmpdir(), "ascout-t14-"));
++    const cwd = vi.spyOn(process, "cwd").mockReturnValue(dir);
++    try {
++      capture();
++      expect(await runCli(["security", "--format", "json"])).toBe(1);
++      expect(readdirSync(dir)).toEqual([]);
++      expect(fetchSpy).not.toHaveBeenCalled();
++    } finally {
++      cwd.mockRestore();
++      rmSync(dir, { recursive: true, force: true });
++    }
++  });
++
++  it("leaves check, review, and test parsing and usage lines unchanged", () => {
++    expect(parseCliArgs(["check"])).toEqual({ command: "check", allowChangedCommandSurface: false });
++    expect(parseCliArgs(["check", "--format", "agent"]).format).toBe("agent");
++    expect(parseCliArgs(["review", "--format", "terminal"]).format).toBe("terminal");
++    expect(parseCliArgs(["test", "--profile", "deep"]).profile).toBe("DEEP");
++    expect(() => parseCliArgs(["review", "--publish"])).toThrow(/read-only/u);
++    expect(usageText().split("\n").slice(0, 6)).toEqual([
++      "Usage:",
++      "  ascout init",
++      "  ascout doctor",
++      "  ascout check [--allow-changed-command-surface] [--format json|agent]",
++      "  ascout review [--format json|terminal]",
++      "  ascout test [--profile quick|standard|deep|release] [--format json|terminal]",
++    ]);
++  });
++});
+diff --git a/tests/assurance-test-cli-test-plan.test.ts b/tests/assurance-test-cli-test-plan.test.ts
+index f59aea0..436a9c9 100644
+--- a/tests/assurance-test-cli-test-plan.test.ts
++++ b/tests/assurance-test-cli-test-plan.test.ts
+@@ -49,7 +49,6 @@ describe("UA-P05-T09 additive test command", () => {
+       ["doctor", "--profile", "quick"],
+       ["init", "--format", "json"],
+       ["check", "--format", "terminal"],
+-      ["security"],
+       ["cyber"],
+       ["assure"],
+     ]) {
