@@ -1,0 +1,302 @@
+diff --git a/src/assurance/security/sentrdel-code-unit-order.ts b/src/assurance/security/sentrdel-code-unit-order.ts
+new file mode 100644
+index 0000000..37e200e
+--- /dev/null
++++ b/src/assurance/security/sentrdel-code-unit-order.ts
+@@ -0,0 +1,10 @@
++/**
++ * UTF-16 code-unit ordering shared by UA-P06 security contracts.
++ *
++ * Deterministic across host locales and ICU versions. Never use localeCompare
++ * for identity-bearing or receipt-bearing canonical order.
++ */
++export function compareCodeUnitsV1(left: string, right: string): number {
++  if (left === right) return 0;
++  return left < right ? -1 : 1;
++}
+diff --git a/src/assurance/security/sentrdel-coverage-mapping.ts b/src/assurance/security/sentrdel-coverage-mapping.ts
+index 4a0a71c..228a829 100644
+--- a/src/assurance/security/sentrdel-coverage-mapping.ts
++++ b/src/assurance/security/sentrdel-coverage-mapping.ts
+@@ -58,6 +58,7 @@ import {
+   SENTRDEL_PINNED_TREE,
+   SENTRDEL_PIN_REF,
+ } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareText } from "./sentrdel-code-unit-order.js";
+ 
+ export const SENTRDEL_COVERAGE_SCHEMA_VERSION = 1 as const;
+ 
+@@ -560,10 +561,6 @@ function canonicalCapabilities(
+   return Object.freeze([...values].sort(compareText));
+ }
+ 
+-function compareText(left: string, right: string): number {
+-  return left < right ? -1 : left > right ? 1 : 0;
+-}
+-
+ /**
+  * Deterministic, dependency-free 128-bit digest. No clock, no randomness, no
+  * host state: identical inputs always produce an identical derived identifier.
+diff --git a/src/assurance/security/sentrdel-dependency-normalization.ts b/src/assurance/security/sentrdel-dependency-normalization.ts
+index 94b8fdf..719f87c 100644
+--- a/src/assurance/security/sentrdel-dependency-normalization.ts
++++ b/src/assurance/security/sentrdel-dependency-normalization.ts
+@@ -108,6 +108,7 @@ import {
+   SENTRDEL_PINNED_TREE,
+   SENTRDEL_PIN_REF,
+ } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareText } from "./sentrdel-code-unit-order.js";
+ 
+ export const SENTRDEL_SCA_SCHEMA_VERSION = 1 as const;
+ 
+@@ -1067,10 +1068,6 @@ function isPositiveIntegerOrNull(value: unknown): value is number | null {
+   return value === null || (Number.isInteger(value) && (value as number) >= 1);
+ }
+ 
+-function compareText(left: string, right: string): number {
+-  return left < right ? -1 : left > right ? 1 : 0;
+-}
+-
+ /**
+  * The EFFECTIVE aggregate coverage state, derived rather than trusted.
+  *
+diff --git a/src/assurance/security/sentrdel-invariant-regression.ts b/src/assurance/security/sentrdel-invariant-regression.ts
+index 3eaf4ad..7cfc5b0 100644
+--- a/src/assurance/security/sentrdel-invariant-regression.ts
++++ b/src/assurance/security/sentrdel-invariant-regression.ts
+@@ -13,6 +13,7 @@ import { SENTRDEL_UNKNOWN_TOKENS } from "./sentrdel-capability-characterization.
+ import { SENTRDEL_ENGINE_ID, SENTRDEL_ENGINE_VERSION } from "./sentrdel-engine-boundary.js";
+ import { containsSecretMaterialV1, containsExternalAttestationV1 } from "./sentrdel-evidence-normalization.js";
+ import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareCodeUnits } from "./sentrdel-code-unit-order.js";
+ 
+ export const SENTRDEL_REGRESSION_AUTHORITY = "UA-P06-T10" as const;
+ export const SENTRDEL_REGRESSION_DONOR_PATH = "crates/sentrdel-review/src/regression/model.rs" as const;
+@@ -165,11 +166,6 @@ function classify(base: Evaluation | undefined, candidate: Evaluation | undefine
+     ["UNKNOWN", "SEMANTIC_CONTINUITY_UNPROVEN"];
+ }
+ 
+-function compareCodeUnits(left: string, right: string): number {
+-  if (left === right) return 0;
+-  return left < right ? -1 : 1;
+-}
+-
+ function presence(base: Evaluation | undefined, candidate: Evaluation | undefined): SentrdelRegressionRecordV1["pair_presence"] {
+   if (base === undefined) return "CANDIDATE_ONLY";
+   return candidate === undefined ? "BASE_ONLY" : "MATCHED";
+diff --git a/src/assurance/security/sentrdel-reproduction-link.ts b/src/assurance/security/sentrdel-reproduction-link.ts
+index 62717c6..ea1c3f9 100644
+--- a/src/assurance/security/sentrdel-reproduction-link.ts
++++ b/src/assurance/security/sentrdel-reproduction-link.ts
+@@ -11,8 +11,7 @@
+  */
+ import { createHash } from "node:crypto";
+ import { snapshotSentrdelObservationDataV1 } from "./sentrdel-observation-snapshot.js";
+-import { containsSecretMaterialV1, containsExternalAttestationV1 } from "./sentrdel-evidence-normalization.js";
+-import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++import { assertNonPromotedObservationV1, readOwnDataV1, readSafeIdV1 } from "./sentrdel-observation-read.js";
+ 
+ export const SENTRDEL_REPRODUCTION_AUTHORITY = "UA-P06-T12" as const;
+ /** No VERIFIED, REPRODUCED, or PROVEN member: linking cannot express an executed proof. */
+@@ -21,13 +20,7 @@ export type SentrdelReproductionLinkStateV1 = (typeof SENTRDEL_REPRODUCTION_LINK
+ 
+ const SHA1 = /^[0-9a-f]{40}$/u;
+ const SHA256 = /^[0-9a-f]{64}$/u;
+-const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
+ const REPRODUCTION_KEYS = ["schema_version", "reproduction_ref", "source_head", "method", "input_digest"];
+-const NON_PROMOTED: Readonly<Record<string, unknown>> = Object.freeze({
+-  schema_version: 1, phase_authority: "UA-P06-T04", authority: "OBSERVATION_ONLY",
+-  engine_pin: SENTRDEL_PINNED_REVISION, engine_tree: SENTRDEL_PINNED_TREE, assurance_effect: "NONE",
+-  finding_emitted: false, claim_assessment_emitted: false, global_clean_claimed: false, remediation_verified: false,
+-});
+ 
+ function fail(reason: string): never {
+   throw new TypeError(`invalid reproduction link: ${reason}`);
+@@ -35,24 +28,15 @@ function fail(reason: string): never {
+ 
+ /** Own data property only; accessors are refused without being invoked. */
+ function own(record: unknown, key: string): unknown {
+-  if (typeof record !== "object" || record === null) fail(`${key} needs a record`);
+-  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+-  if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) fail(`${key} must be an own data property`);
+-  return descriptor.value;
++  return readOwnDataV1(record, key, fail);
+ }
+ 
+ function id(value: unknown, what: string): string {
+-  if (typeof value !== "string" || !ID.test(value)) fail(`${what} is invalid`);
+-  if (containsSecretMaterialV1(value) || containsExternalAttestationV1(value)) {
+-    fail(`${what} may not contain secrets or self-attestation`);
+-  }
+-  return value;
++  return readSafeIdV1(value, what, fail);
+ }
+ 
+ function readObservation(raw: unknown) {
+-  for (const [key, expected] of Object.entries(NON_PROMOTED)) {
+-    if (own(raw, key) !== expected) fail(`observation ${key} claims more than a pinned T04 observation`);
+-  }
++  assertNonPromotedObservationV1(raw, fail);
+   const sourceHead = own(raw, "source_head");
+   if (typeof sourceHead !== "string" || !SHA1.test(sourceHead)) fail("observation source_head is invalid");
+   const declared = own(raw, "reproduction_ref");
+diff --git a/src/assurance/security/sentrdel-sarif-export.ts b/src/assurance/security/sentrdel-sarif-export.ts
+index 3c06604..46b9920 100644
+--- a/src/assurance/security/sentrdel-sarif-export.ts
++++ b/src/assurance/security/sentrdel-sarif-export.ts
+@@ -11,6 +11,8 @@
+ import { createHash } from "node:crypto";
+ import { containsSecretMaterialV1, containsExternalAttestationV1 } from "./sentrdel-evidence-normalization.js";
+ import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 } from "./sentrdel-code-unit-order.js";
++import { assertNonPromotedObservationV1, readOwnDataV1, readOwnListV1 } from "./sentrdel-observation-read.js";
+ 
+ export const SENTRDEL_SARIF_EXPORT_AUTHORITY = "UA-P06-T11" as const;
+ /** Matches the T11A import bound, so every export can be re-imported. */
+@@ -18,12 +20,6 @@ export const SENTRDEL_SARIF_EXPORT_MAX_OBSERVATIONS = 4_096 as const;
+ 
+ const SHA1 = /^[0-9a-f]{40}$/u;
+ const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/u;
+-/** Fields whose exact values prove the record never claimed more than an observation. */
+-const NON_PROMOTED: Readonly<Record<string, unknown>> = Object.freeze({
+-  schema_version: 1, phase_authority: "UA-P06-T04", authority: "OBSERVATION_ONLY",
+-  engine_pin: SENTRDEL_PINNED_REVISION, engine_tree: SENTRDEL_PINNED_TREE, assurance_effect: "NONE",
+-  finding_emitted: false, claim_assessment_emitted: false, global_clean_claimed: false, remediation_verified: false,
+-});
+ 
+ /** A fresh copy of only the fields the export reads. */
+ interface Obs {
+@@ -52,17 +48,11 @@ function safe(value: string, what: string): string {
+  * the exported fields this way gives the same no-getter guarantee.
+  */
+ function own(record: unknown, key: string): unknown {
+-  if (typeof record !== "object" || record === null) fail(`${key} needs a record`);
+-  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+-  if (descriptor === undefined || !Object.hasOwn(descriptor, "value")) fail(`${key} must be an own data property`);
+-  return descriptor.value;
++  return readOwnDataV1(record, key, fail);
+ }
+ 
+ function list(value: unknown, what: string, max: number): unknown[] {
+-  if (!Array.isArray(value)) fail(`${what} must be an array`);
+-  const length = own(value, "length");
+-  if (!Number.isSafeInteger(length) || (length as number) > max) fail(`${what} must be bounded`);
+-  return Array.from({ length: length as number }, (_, index) => own(value, String(index)));
++  return readOwnListV1(value, what, max, fail);
+ }
+ 
+ function text(record: unknown, key: string): string {
+@@ -78,9 +68,7 @@ function line(value: unknown): number | null {
+ }
+ 
+ function checkObservation(raw: unknown): Obs {
+-  for (const [key, expected] of Object.entries(NON_PROMOTED)) {
+-    if (own(raw, key) !== expected) fail(`observation ${key} claims more than a pinned T04 observation`);
+-  }
++  assertNonPromotedObservationV1(raw, fail);
+   const sourceHead = own(raw, "source_head");
+   if (typeof sourceHead !== "string" || !SHA1.test(sourceHead)) fail("observation source_head is invalid");
+   const ruleRaw = own(raw, "rule_id");
+@@ -157,10 +145,7 @@ export function exportSentrdelSarifV1(observations: unknown) {
+   const ids = checked.map(o => o.observation_id);
+   if (new Set(ids).size !== ids.length) fail("observations must be unique");
+   // UTF-16 code-unit order keeps the log independent of input order and host locale.
+-  const ordered = [...checked].sort((a, b) => {
+-    if (a.observation_id === b.observation_id) return 0;
+-    return a.observation_id < b.observation_id ? -1 : 1;
+-  });
++  const ordered = [...checked].sort((a, b) => compareCodeUnitsV1(a.observation_id, b.observation_id));
+   const log = {
+     $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+     version: "2.1.0",
+diff --git a/src/assurance/security/sentrdel-sast-normalization.ts b/src/assurance/security/sentrdel-sast-normalization.ts
+index 972dbd3..7fb7a83 100644
+--- a/src/assurance/security/sentrdel-sast-normalization.ts
++++ b/src/assurance/security/sentrdel-sast-normalization.ts
+@@ -80,6 +80,7 @@ import {
+   SENTRDEL_PINNED_TREE,
+   SENTRDEL_PIN_REF,
+ } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareText } from "./sentrdel-code-unit-order.js";
+ 
+ 
+ export const SENTRDEL_SAST_SCHEMA_VERSION = 1 as const;
+@@ -407,10 +408,6 @@ function isPositiveIntegerOrNull(value: unknown): value is number | null {
+   return value === null || (Number.isInteger(value) && (value as number) >= 1);
+ }
+ 
+-function compareText(left: string, right: string): number {
+-  return left < right ? -1 : left > right ? 1 : 0;
+-}
+-
+ /** Canonical code-unit ordering, independent of locale and traversal order. */
+ function canonicalStrings(values: readonly string[]): readonly string[] {
+   return Object.freeze([...values].sort(compareText));
+diff --git a/src/assurance/security/sentrdel-secret-normalization.ts b/src/assurance/security/sentrdel-secret-normalization.ts
+index a7c4e5d..58aa8c9 100644
+--- a/src/assurance/security/sentrdel-secret-normalization.ts
++++ b/src/assurance/security/sentrdel-secret-normalization.ts
+@@ -85,6 +85,7 @@ import {
+   SENTRDEL_PINNED_TREE,
+   SENTRDEL_PIN_REF,
+ } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareText } from "./sentrdel-code-unit-order.js";
+ 
+ export const SENTRDEL_SECRET_SCHEMA_VERSION = 1 as const;
+ 
+@@ -610,10 +611,6 @@ function isPositiveInteger(value: unknown): value is number {
+   return Number.isInteger(value) && (value as number) >= 1;
+ }
+ 
+-function compareText(left: string, right: string): number {
+-  return left < right ? -1 : left > right ? 1 : 0;
+-}
+-
+ /** Canonical code-unit ordering, independent of locale and traversal order. */
+ function canonicalStrings(values: readonly string[]): readonly string[] {
+   return Object.freeze([...values].sort(compareText));
+diff --git a/src/assurance/security/sentrdel-t09-inventory.ts b/src/assurance/security/sentrdel-t09-inventory.ts
+index fe8de99..1137e5e 100644
+--- a/src/assurance/security/sentrdel-t09-inventory.ts
++++ b/src/assurance/security/sentrdel-t09-inventory.ts
+@@ -16,6 +16,7 @@ import {
+   type SentrdelConfigPresenceObservationV1,
+ } from "./sentrdel-config-presence.js";
+ import { SENTRDEL_PINNED_REVISION, SENTRDEL_PINNED_TREE } from "./sentrdel-source-pin.js";
++import { compareCodeUnitsV1 as compareIdentity } from "./sentrdel-code-unit-order.js";
+ 
+ export const SENTRDEL_T09_INVENTORY_AUTHORITY = "UA-P06-T09" as const;
+ export const SENTRDEL_T09_MAX_OBSERVATIONS = 64 as const;
+@@ -97,8 +98,6 @@ export function buildSentrdelT09InventoryV1(value: unknown): SentrdelT09Inventor
+   }
+   // UTF-16 code-unit ordering is deterministic across host locales/ICU versions.
+   // Never use localeCompare for identity-bearing or receipt-bearing canonical order.
+-  const compareIdentity = (left: string, right: string): number =>
+-    left < right ? -1 : left > right ? 1 : 0;
+   const sortedWorkflows = Object.freeze([...normalizedWorkflows].sort((a, b) =>
+     compareIdentity(a.observation_id, b.observation_id)));
+   const sortedConfig = Object.freeze([...normalizedConfig].sort((a, b) =>
+diff --git a/tests/assurance-security-code-unit-order.test.ts b/tests/assurance-security-code-unit-order.test.ts
+new file mode 100644
+index 0000000..9fd1e3f
+--- /dev/null
++++ b/tests/assurance-security-code-unit-order.test.ts
+@@ -0,0 +1,18 @@
++import { describe, expect, it } from "vitest";
++import { compareCodeUnitsV1 } from "../src/assurance/security/sentrdel-code-unit-order.js";
++
++describe("shared UA-P06 code-unit comparator", () => {
++  it("is a total, antisymmetric three-way comparison", () => {
++    expect(compareCodeUnitsV1("a", "a")).toBe(0);
++    expect(compareCodeUnitsV1("a", "b")).toBe(-1);
++    expect(compareCodeUnitsV1("b", "a")).toBe(1);
++    expect(compareCodeUnitsV1("", "a")).toBe(-1);
++  });
++
++  it("orders by UTF-16 code units, not by locale", () => {
++    // Uppercase sorts before lowercase, and accented letters after ASCII, regardless of host ICU.
++    expect(["b", "B", "a", "ä", "A"].sort(compareCodeUnitsV1)).toEqual(["A", "B", "a", "b", "ä"]);
++    expect(compareCodeUnitsV1("Z", "a")).toBe(-1);
++    expect(compareCodeUnitsV1("a", "Z")).toBe(1);
++  });
++});

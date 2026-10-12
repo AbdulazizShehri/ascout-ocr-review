@@ -1,0 +1,19 @@
+# Files (9 reviewable / 10 total)
+
+- mode: range
+- from: ea93553a5423fd47f12a6bf282820dd199b994d4
+- to: 9979f8c8166493a63592e3b4f33cf96eb3933309
+- merge_base: ea93553a5423fd47f12a6bf282820dd199b994d4
+- total_insertions: 44
+- total_deletions: 64
+
+  - `src/assurance/security/sentrdel-code-unit-order.ts` [added] +10/-0
+  - `src/assurance/security/sentrdel-coverage-mapping.ts` [modified] +1/-4
+  - `src/assurance/security/sentrdel-dependency-normalization.ts` [modified] +1/-4
+  - `src/assurance/security/sentrdel-invariant-regression.ts` [modified] +1/-5
+  - `src/assurance/security/sentrdel-reproduction-link.ts` [modified] +4/-20
+  - `src/assurance/security/sentrdel-sarif-export.ts` [modified] +6/-21
+  - `src/assurance/security/sentrdel-sast-normalization.ts` [modified] +1/-4
+  - `src/assurance/security/sentrdel-secret-normalization.ts` [modified] +1/-4
+  - `src/assurance/security/sentrdel-t09-inventory.ts` [modified] +1/-2
+~~- `tests/assurance-security-code-unit-order.test.ts` [added] +18/-0 (excluded: default_path)~~
