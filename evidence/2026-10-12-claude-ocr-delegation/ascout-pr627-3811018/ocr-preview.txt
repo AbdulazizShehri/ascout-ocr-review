@@ -1,0 +1,10 @@
+# Files (0 reviewable / 1 total)
+
+- mode: range
+- from: 5d2626f683b583dc987301def144d33f2be373d0
+- to: 381101820c1c370c2f612e5921dc27bd915fda48
+- merge_base: 5d2626f683b583dc987301def144d33f2be373d0
+- total_insertions: 55
+- total_deletions: 0
+
+~~- `specs/017-unified-assurance/UA_P06_T14_CLI_SURFACE_AMENDMENT_S1.md` [added] +55/-0 (excluded: unsupported_ext)~~
