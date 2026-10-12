@@ -1,4 +1,4 @@
-# Ascout #T16 (UA-P06-T16 P6 qualification) — §3 review record (SELF-REVIEW)
+# Ascout #632 (UA-P06-T16 P6 qualification) — §3 review record (SELF-REVIEW)
 
 - **Exact range:** `664edcc04f25b8bda5b69806cbf8960531a1cf58..3a342fc4020c51f772a7486a89fe3e5e5052da66` (predecessor head .. this head)
 - **OCR:** open-code-review v1.12.13 (fabbdb29), official delegation mode. Selected: none (test-only change). Excluded and reviewed separately: `tests/assurance-security-t16.test.ts`.
@@ -14,4 +14,4 @@ Qualification sentinel only; no new capability (authorization §17). Each of the
 - Jev: `"noul":0.23`.
 - Diffcipline (external policy with typecheck and the task's tests): "verdict":"PASS", +127 lines.
 - Local: typecheck 0 errors; 20 security test files, 309/309 at the T16 tip.
-- Exact-head CI attempt 1: CI_PLACEHOLDER
+- Exact-head CI attempt 1: Project CI 38192759222 success 6/6; Self Verification 38192760992 success.

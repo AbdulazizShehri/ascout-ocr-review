@@ -1,4 +1,4 @@
-# Ascout #T15A (UA-P06-T15A security benchmark) — §3 review record (SELF-REVIEW)
+# Ascout #630 (UA-P06-T15A security benchmark) — §3 review record (SELF-REVIEW)
 
 - **Exact range:** `c9d85ef8469fa43a4e608f9bd0179bfa3d83efbd..844ebdfce225e06733703f3d4a4d8e73b374989c` (predecessor head .. this head)
 - **OCR:** open-code-review v1.12.13 (fabbdb29), official delegation mode. Selected: `src/assurance/security/sentrdel-security-benchmark.ts`. Excluded and reviewed separately: `tests/assurance-security-t15a.test.ts`.
@@ -14,4 +14,4 @@ Fifteen deterministic synthetic cases run through the real T09–T14 contracts a
 - Jev: `"noul":0.18`.
 - Diffcipline (external policy with typecheck and the task's tests): "verdict":"PASS", +226 lines.
 - Local: typecheck 0 errors; 20 security test files, 309/309 at the T16 tip.
-- Exact-head CI attempt 1: CI_PLACEHOLDER
+- Exact-head CI attempt 1: Project CI 38190647382 success 6/6; Self Verification 38190647387 success.
