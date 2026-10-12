@@ -1,0 +1,1 @@
+{"cases":6,"all_cases_matched":true,"hard_gates":{"secret_plaintext_in_persisted_artifact":0,"reachability_verdict_accepted":0,"unredacted_secret_accepted":0}}

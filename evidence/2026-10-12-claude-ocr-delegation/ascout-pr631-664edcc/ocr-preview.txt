@@ -1,0 +1,11 @@
+# Files (1 reviewable / 2 total)
+
+- mode: range
+- from: 844ebdfce225e06733703f3d4a4d8e73b374989c
+- to: 664edcc04f25b8bda5b69806cbf8960531a1cf58
+- merge_base: 844ebdfce225e06733703f3d4a4d8e73b374989c
+- total_insertions: 120
+- total_deletions: 0
+
+  - `src/assurance/security/sentrdel-security-benchmark-data.ts` [added] +88/-0
+~~- `tests/assurance-security-t15b.test.ts` [added] +32/-0 (excluded: default_path)~~
